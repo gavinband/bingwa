@@ -31,6 +31,7 @@ namespace snp_stats {
 		) ;
 	
 		void set_comparer( genfile::SNPIdentifyingData::CompareFields const& comparer ) ;
+		void set_flip_alleles_if_necessary() ;
 	
 		void operator()( SNPIdentifyingData const&, Genotypes const&, SampleSexes const&, genfile::VariantDataReader&, ResultCallback ) ;
 		std::string get_summary( std::string const& prefix = "", std::size_t column_width = 20 ) const ;
@@ -39,6 +40,7 @@ namespace snp_stats {
 		CrossDataSetSampleMapper m_sample_mapper ;
 
 		genfile::SNPIdentifyingData::CompareFields m_comparer ;
+		bool m_flip_alleles_if_necessary ;
 		genfile::SNPDataSource::UniquePtr m_alt_dataset_snps ;
 
 		double const m_call_threshhold ;
