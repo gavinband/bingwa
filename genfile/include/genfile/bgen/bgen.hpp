@@ -179,6 +179,8 @@ namespace genfile {
 		) ;
 			
 		// Write identifying data fields for the given variant.
+		// The buffer will be resizes to fit.
+		// Return a pointer to past-the-end of the data written.
 		template< typename AlleleGetter >
 		byte_t* write_snp_identifying_data(
 			std::vector< byte_t >* buffer,
@@ -354,11 +356,14 @@ namespace genfile {
 			return buffer ;
 		}
 
-		// Write an integer to the buffer in little-endian format.
+		// Write data containd in a std::string to the buffer,
+		// Preceded by a length of the given integral type in little-endian format.
+		// Return past-the-end of what was written.
 		template< typename IntegerType >
 		byte_t* write_length_followed_by_data( byte_t* buffer, byte_t* const end, IntegerType length, std::string const data_string ) {
+			assert( end >= buffer + length + sizeof( IntegerType ) ) ;
+			assert( length <= data_string.size() ) ;
 			buffer = write_little_endian_integer( buffer, end, length ) ;
-			assert( end >= buffer + length ) ;
 			buffer = std::copy( data_string.begin(), data_string.begin() + length, buffer ) ;
 			return buffer ;
 		}
@@ -372,6 +377,8 @@ namespace genfile {
 			out_stream.write( reinterpret_cast< char const* >( buffer ), sizeof( IntegerType )) ;
 		}
 		
+		// Write data containd in a std::string to the stream,
+		// Preceded by a length of the given integral type in little-endian format.
 		template< typename IntegerType >
 		void write_length_followed_by_data( std::ostream& out_stream, IntegerType length, std::string const data_string ) {
 			assert( length <= data_string.size() ) ;
@@ -945,11 +952,11 @@ namespace genfile {
 					m_offset = 0 ;
 					if( m_number_of_samples == 0 ) {
 						m_ploidyExtent[0] = 0 ;
-						m_order_type = ePerUnorderedGenotype ;
+						m_order_type = ePerPhasedHaplotypePerAllele ;
 					}
 					// We set data as phased until we learn otherwise
-					// This helps in the case where some samples have ploidy=1
-					// which can be consistent with phased or unphased data.
+					// In the case of samples with ploidy < 2, this means we nominally interpret data 
+					// the data as phased until we see an informative sample.
 					m_buffer[8+m_number_of_samples] = 1 ; 
 					m_buffer[9+m_number_of_samples] = m_number_of_bits ;
 					m_state = eInitialised ;
@@ -983,9 +990,6 @@ namespace genfile {
 					if( ploidy > 1 ) {
 						if( m_order_type == eUnknownOrderType ) {
 							m_order_type = order_type ;
-							// write phased flag.
-							m_buffer[8+m_number_of_samples] = ( m_order_type == ePerPhasedHaplotypePerAllele ) ? 1 : 0 ;
-							m_buffer[9+m_number_of_samples] = m_number_of_bits ;
 						} else {
 							if( m_order_type != order_type ) {
 								throw BGenError() ;
@@ -996,7 +1000,7 @@ namespace genfile {
 						throw BGenError() ;
 					}
 					m_number_of_entries = number_of_entries ;
-					m_entries_per_bake = (m_order_type == ePerUnorderedGenotype) ? m_number_of_entries : m_number_of_alleles ;
+					m_entries_per_bake = (m_order_type == ePerUnorderedGenotype || m_ploidy == 0) ? m_number_of_entries : m_number_of_alleles ;
 					m_entry_i = 0 ;
 					m_missing = eNotSet ;
 					m_state = eNumberOfEntriesSet ;
@@ -1028,10 +1032,14 @@ namespace genfile {
 					m_values[m_entry_i++] = value ;
 					m_sum += value ;
 
+#if DEBUG_BGEN_FORMAT
 					std::cerr << "set_value( " << entry_i << ", " << value << "); m_entry_i = " << m_entry_i << "\n" ;
+#endif
 					// Any sane input values will sum to 1 ± somerounding error, which should be small.
 					if( ( m_sum != m_sum ) || (m_sum > m_tolerance)) {
+#if DEBUG_BGEN_FORMAT
 						std::cerr << "First " << entry_i << " input values sum to " << m_sum << ".\n" ;
+#endif
 						throw BGenError() ;
 					}
 
@@ -1049,11 +1057,30 @@ namespace genfile {
 				}
 
 				void finalise() {
-					assert(
-						( m_number_of_samples == 0 && m_state == eInitialised )
-						|| ( m_number_of_entries == 0 && m_state == eNumberOfEntriesSet )
-						|| m_state == eBaked
-					) ;
+					if( m_order_type == eUnknownOrderType ) {
+						m_order_type = ePerPhasedHaplotypePerAllele ;
+					}
+					m_buffer[8+m_number_of_samples] = ( m_order_type == ePerPhasedHaplotypePerAllele ) ? 1 : 0 ;
+					m_buffer[9+m_number_of_samples] = m_number_of_bits ;
+					
+					if(
+						!(
+							( m_number_of_samples == 0 && m_state == eInitialised )
+							|| ( m_number_of_entries == 0 && m_state == eNumberOfEntriesSet )
+							|| m_state == eBaked
+						)
+					) {
+						std::cerr << "genfile::bgen::v12::ProbabilityDataWriter::finalise(): m_number_of_samples = "
+							<< m_number_of_samples
+							<< " m_state = " << m_state
+							<< " m_number_of_entries = " << m_number_of_entries
+							<< " m_entries_per_bake = " << m_entries_per_bake
+							<< " m_entry_i = " << m_entry_i
+							<< " m_order_type = " << m_order_type
+							<< " m_ploidy = " << m_ploidy
+							<< ".\n" ;
+						throw BGenError() ;
+					}
 					// Write any remaining data
 					if( m_offset > 0 ) {
 						int const nBytes = (m_offset+7)/8 ;
@@ -1292,8 +1319,10 @@ namespace genfile {
 				assert( (m_writer->repr().second - m_writer->repr().first) <= m_buffer1->size() ) ;
 				uLongf const uncompressed_data_size = (m_writer->repr().second - m_writer->repr().first) ;
 
+#if DEBUG_BGEN_FORMAT
 				std::cerr << ( m_writer->repr().first ) << "  :" << m_writer->repr().second << ", diff = " << (m_writer->repr().second - m_writer->repr().first) << "\n" ;
 				std::cerr << "expected " << uncompressed_data_size << "\n" ;
+#endif
 				if( m_context.flags & e_CompressedSNPBlocks ) {
 		#if HAVE_ZLIB
 					std::size_t offset = (m_layout == e_v12Layout) ? 8 : 4 ;
@@ -1325,10 +1354,10 @@ namespace genfile {
 					std::size_t offset = (m_layout == e_v12Layout) ? 4 : 0 ;
 					m_buffer2->resize( m_buffer1->size() + offset ) ;
 					if( m_layout == e_v12Layout ) {
-						write_little_endian_integer( &(*m_buffer2)[0], &(*m_buffer2)[0]+4, uint32_t(  )) ;
+						write_little_endian_integer( &(*m_buffer2)[0], &(*m_buffer2)[0]+4, uint32_t( uncompressed_data_size )) ;
 					}
 					std::copy( &(*m_buffer1)[0], &(*m_buffer1)[0] + uncompressed_data_size, &(*m_buffer2)[0] + offset ) ;
-					m_result = std::make_pair( &(*m_buffer2)[0], &(*m_buffer2)[0] + m_buffer2->size() ) ;
+					m_result = std::make_pair( &(*m_buffer2)[0], &(*m_buffer2)[0] + uncompressed_data_size + offset ) ;
 				}
 			}
 			
