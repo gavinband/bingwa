@@ -1,13 +1,10 @@
-===========================================
-bingwa - README
+# bingwa - README
 Copyright 2009-2016 Gavin Band, University of Oxford
-===========================================
 
 bingwa is a package for frequentist and bayesian meta-analysis of GWAS.
 See the website <http://www.well.ox.ac.uk/~gav/bingwa> for more details.
 
-COMPILATION
-===========
+## COMPILATION
 
 Compilation involves two steps: configuration and build.
 To configure the package, from the top-level directory run
