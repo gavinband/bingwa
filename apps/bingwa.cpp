@@ -820,6 +820,7 @@ struct FixedEffectFrequentistMetaAnalysis: public BingwaComputation {
 	}
 
 	void get_variables( boost::function< void ( std::string ) > callback ) const {
+		callback( "FixedEffectMetaAnalysis:included_cohorts" ) ;
 		callback( "FixedEffectMetaAnalysis:meta_beta" ) ;
 		callback( "FixedEffectMetaAnalysis:meta_se" ) ;
 		callback( "FixedEffectMetaAnalysis:pvalue" ) ;
@@ -831,6 +832,7 @@ struct FixedEffectFrequentistMetaAnalysis: public BingwaComputation {
 		ResultCallback callback
 	) {
 		std::size_t const N = data_getter.get_number_of_cohorts() ;
+		m_included_cohorts.resize( N, '0' ) ;
 		if( N == 0 ) {
 			return ;
 		}
@@ -838,12 +840,17 @@ struct FixedEffectFrequentistMetaAnalysis: public BingwaComputation {
 		Eigen::VectorXd ses = Eigen::VectorXd::Constant( N, NA ) ;
 		Eigen::VectorXd non_missingness = Eigen::VectorXd::Constant( N, NA ) ;
 		if( !impl::get_betas_and_ses_one_per_cohort( data_getter, m_filter, betas, ses, non_missingness ) ) {
+			callback( "FixedEffectMetaAnalysis:included_cohorts", std::string( '0', N ) ) ;
+			callback( "FixedEffectMetaAnalysis:meta_beta", genfile::MissingValue() ) ;
 			callback( "FixedEffectMetaAnalysis:meta_beta", genfile::MissingValue() ) ;
 			callback( "FixedEffectMetaAnalysis:meta_se", genfile::MissingValue() ) ;
 			callback( "FixedEffectMetaAnalysis:pvalue", genfile::MissingValue() ) ;
 			return ;
 		}
 		else {
+			for( std::size_t i = 0; i < N; ++i ) {
+				m_included_cohorts[i] = ( non_missingness(i) ? '1' : '0' ) ;
+			}
 			Eigen::VectorXd inverse_variances = ( ses.array() * ses.array() ).inverse() ;
 			for( int i = 0; i < int(N); ++i ) {
 				if( non_missingness( i ) == 0.0 ) {
@@ -855,6 +862,7 @@ struct FixedEffectFrequentistMetaAnalysis: public BingwaComputation {
 			double const meta_beta = ( non_missingness.sum() == 0 ) ? NA : ( inverse_variances.array() * betas.array() ).sum() / inverse_variances.sum() ;
 			double const meta_se = ( non_missingness.sum() == 0 ) ? NA : std::sqrt( 1.0 / inverse_variances.sum() ) ;
 
+			callback( "FixedEffectMetaAnalysis:included_cohorts", m_included_cohorts ) ;
 			callback( "FixedEffectMetaAnalysis:meta_beta", meta_beta ) ;
 			callback( "FixedEffectMetaAnalysis:meta_se", meta_se ) ;
 
@@ -881,6 +889,7 @@ struct FixedEffectFrequentistMetaAnalysis: public BingwaComputation {
 private:
 	Filter m_filter ;
 	int m_degrees_of_freedom ;
+	std::string m_included_cohorts ;
 } ;
 
 
