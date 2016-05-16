@@ -7,7 +7,7 @@
 #include <limits>
 #include <boost/regex.hpp>
 #include <boost/format.hpp>
-#include "FlatFileFrequentistGenomeWideAssociationResults.hpp"
+#include "bingwa/FlatFileFrequentistGenomeWideAssociationResults.hpp"
 
 namespace {
 	double const NA = std::numeric_limits< double >::quiet_NaN() ;

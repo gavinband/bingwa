@@ -10,7 +10,7 @@
 #include <boost/bimap.hpp>
 #include <boost/regex.hpp>
 #include "statfile/BuiltInTypeStatSource.hpp"
-#include "FrequentistGenomeWideAssociationResults.hpp"
+#include "bingwa/FrequentistGenomeWideAssociationResults.hpp"
 
 /*
 * Class FlatFileFrequentistGenomeWideAssociationResults.
