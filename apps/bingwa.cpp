@@ -267,6 +267,11 @@ struct BingwaOptions: public appcontext::CmdLineOptionProcessor {
 				.set_minimum_multiplicity( 0 )
 				.set_maximum_multiplicity( 1 ) ;
 			
+			options[ "-per-population-prior" ]
+				.set_description( "Specify a prior model to use for per-population BFs.\n" )
+				.set_takes_single_value()
+				.set_default_value( "sds=0.2/cor=1" ) ;
+
 			options[ "-prior" ]
 				.set_description( "Specify a prior model to use when computing a bayes factor.\n"
 					"The format of the argument is as follows:\n"
@@ -1798,18 +1803,21 @@ public:
 					
 					summarise_priors( priors, prior_names, prior_weights, cohort_names ) ;
 				}
-				if( options().check( "-per-population-prior" ) ) {
+				{
 					Prior const prior = get_per_population_prior( options() ) ;
-					assert( priors.size() == 1 ) ;
 					PerCohortBayesFactor::UniquePtr bf(
 						new PerCohortBayesFactor(
-							m_model_names,
+							cohort_names,
 							PerCohortBayesFactor::ModelSpec(
 								"per-cohort",
-								prior,
+								std::make_pair( "per-cohort", prior ),
 								1.0
 							)
 						)
+					) ;
+					m_processor->add_computation(
+						"per-cohort",
+						bingwa::BingwaComputation::UniquePtr( bf.release() )
 					) ;
 				}
 			}
@@ -2427,7 +2435,12 @@ public:
 
 		return result ;
 	}
-	
+
+	Prior get_per_population_prior( appcontext::OptionProcessor const& options ) {
+		Prior result ;
+		return result ;
+	}
+
 	Priors get_priors( appcontext::OptionProcessor const& options, std::vector< std::string > const& cohort_names ) {
 		Priors result ;
 		using genfile::string_utils::to_string ;
