@@ -934,12 +934,19 @@ public:
 	struct ModelSpec {
 	public:
 		typedef boost::tuple< std::vector< std::string >, std::vector< std::string >, std::vector< std::string > > CovarianceSpec ;
+		typedef std::pair< std::string, std::pair< CovarianceSpec, Eigen::MatrixXd > > Covariance ;
 
 	public:
 		template< typename IteratorBegin, typename IteratorEnd >
 		ModelSpec( std::string const& name, IteratorBegin begin, IteratorEnd end, double weight ):
 			m_name( name ),
 			m_covariances( begin, end ),
+			m_weight( weight )
+		{}
+
+		ModelSpec( std::string const& name, Covariance const& covariance, double weight ):
+			m_name( name ),
+			m_covariances( 1, covariance ),
 			m_weight( weight )
 		{}
 			
@@ -962,7 +969,7 @@ public:
 		double weight() const { return m_weight ; }
 	private:
 		std::string  m_name ;
-		std::vector< std::pair< std::string, std::pair< CovarianceSpec, Eigen::MatrixXd > > > m_covariances ;
+		std::vector< Covariance > m_covariances ;
 		double m_weight ;
 	} ;
 	
@@ -1629,7 +1636,8 @@ public:
 	typedef std::map< std::string, double > PriorWeights ;
 	typedef boost::tuple< std::vector< std::string >, std::vector< std::string >, std::vector< std::string > > CovarianceSpec ;
 	typedef std::vector< CovarianceSpec > CovarianceSpecs ;
-	typedef std::multimap< std::string, std::pair< CovarianceSpec, Eigen::MatrixXd > > Priors ;
+	typedef std::pair< CovarianceSpec, Eigen::MatrixXd > Prior ;
+	typedef std::multimap< std::string, Prior > Priors ;
 	enum { eBetweenPopulationCorrelation = 0, eSD = 1, eCorrelation = 2 } ;
 
 public:
@@ -1789,6 +1797,20 @@ public:
 					}
 					
 					summarise_priors( priors, prior_names, prior_weights, cohort_names ) ;
+				}
+				if( options().check( "-per-population-prior" ) ) {
+					Prior const prior = get_per_population_prior( options() ) ;
+					assert( priors.size() == 1 ) ;
+					PerCohortBayesFactor::UniquePtr bf(
+						new PerCohortBayesFactor(
+							m_model_names,
+							PerCohortBayesFactor::ModelSpec(
+								"per-cohort",
+								prior,
+								1.0
+							)
+						)
+					) ;
 				}
 			}
 		}
