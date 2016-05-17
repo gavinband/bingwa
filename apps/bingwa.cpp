@@ -250,7 +250,7 @@ struct BingwaOptions: public appcontext::CmdLineOptionProcessor {
 				.set_description( "Don't do a fixed effect meta-analysis.  Instead, just match up SNPs and store per-cohort values." ) ;
 		}
 		{
-			options.declare_group( "Bayesian meta-analysis options" ) ;
+			options.declare_group( "Bayesian analysis options" ) ;
 			options[ "-define-sd-set" ]
 				.set_description( "Define set(s) of standard deviations to use in prior specifications. "
 					"The value should be a whitespace-separated list of elements of the form "
@@ -259,6 +259,12 @@ struct BingwaOptions: public appcontext::CmdLineOptionProcessor {
 				.set_minimum_multiplicity( 0 )
 				.set_maximum_multiplicity( 1 ) ;
 
+			options[ "-per-cohort-prior" ]
+				.set_description( "Specify a prior model to use for per-population BFs.\n" )
+				.set_takes_single_value()
+				.set_default_value( "sd=0.2/cor=1" ) ;
+
+			options.declare_group( "Bayesian meta-analysis options" ) ;
 			options[ "-define-tau-set" ]
 				.set_description( "Define set(s) of correlations to use in prior specifications. "
 					"The value should be a whitespace-separated list of elements of the form "
@@ -267,11 +273,6 @@ struct BingwaOptions: public appcontext::CmdLineOptionProcessor {
 				.set_minimum_multiplicity( 0 )
 				.set_maximum_multiplicity( 1 ) ;
 			
-			options[ "-per-population-prior" ]
-				.set_description( "Specify a prior model to use for per-population BFs.\n" )
-				.set_takes_single_value()
-				.set_default_value( "sds=0.2/cor=1" ) ;
-
 			options[ "-prior" ]
 				.set_description( "Specify a prior model to use when computing a bayes factor.\n"
 					"The format of the argument is as follows:\n"
@@ -466,19 +467,19 @@ namespace impl {
 		Eigen::MatrixXd& covariance,
 		Eigen::VectorXd& non_missingness,
 		int const numberOfEffects,
-		std::size_t i
+		std::size_t cohort
 	) {
 		std::size_t N = data_getter.get_number_of_cohorts() ;
-		assert( i < N ) ;
-		betas.setConstant( numberOfEffects, 0 ) ;
-		non_missingness.setConstant( numberOfEffects, 0 ) ;
+		assert( cohort < N ) ;
+		betas.setZero( numberOfEffects ) ;
+		non_missingness.setZero( numberOfEffects ) ;
 		covariance.setZero( numberOfEffects, numberOfEffects ) ;
 
-		if( filter( data_getter, i ) ) {
+		if( filter( data_getter, cohort ) ) {
 			Eigen::VectorXd this_betas, this_ses, this_covariance ;
-			data_getter.get_betas( i, &this_betas ) ;
-			data_getter.get_ses( i, &this_ses ) ;
-			data_getter.get_covariance_upper_triangle( i, &this_covariance ) ;
+			data_getter.get_betas( cohort, &this_betas ) ;
+			data_getter.get_ses( cohort, &this_ses ) ;
+			data_getter.get_covariance_upper_triangle( cohort, &this_covariance ) ;
 			if(
 				this_betas.size() != numberOfEffects
 				||
@@ -487,9 +488,17 @@ namespace impl {
 				this_covariance.size() != ((numberOfEffects-1) * numberOfEffects / 2 ) ) {
 				return false ;
 			}
-			betas = this_betas ;
-			covariance = this_covariance ;
-			non_missingness.setConstant( 1 ) ;
+			if( this_betas.sum() == this_betas.sum() && this_covariance.sum() == this_covariance.sum() ) {
+				betas = this_betas ;
+				int covariance_i = 0 ;
+				for( std::size_t i = 0; i < numberOfEffects; ++i ) {
+					covariance( i, i ) = this_ses(i) * this_ses(i) ;
+					for( std::size_t j = i+1; j < numberOfEffects; ++j ) {
+						covariance( j, i ) = covariance( i, j ) = this_covariance( covariance_i++ );
+					}
+				}
+				non_missingness.setConstant( 1 ) ;
+			}
 		}
 		return true ;
 	}
@@ -607,9 +616,9 @@ namespace impl {
 		constant = sqrt( det( V ) / det( V + prior ) ) ;
 		exponent = 0.5 * t( betas ) %*% ( solve( V ) - solve( V + prior ) ) %*% betas
 		print( V )
-		print( betas )
-		print( constant )
-		print( exponent )
+		#print( betas )
+		#print( constant )
+		#print( exponent )
 		return( constant * exp( exponent ))
 	}
 */
@@ -938,6 +947,7 @@ public:
 
 	struct ModelSpec {
 	public:
+		// between populat
 		typedef boost::tuple< std::vector< std::string >, std::vector< std::string >, std::vector< std::string > > CovarianceSpec ;
 		typedef std::pair< std::string, std::pair< CovarianceSpec, Eigen::MatrixXd > > Covariance ;
 
@@ -1160,22 +1170,31 @@ public:
 		Eigen::MatrixXd covariance ;
 		Eigen::VectorXd non_missingness ;
 		for( std::size_t i = 0; i < N; ++i ) {
-			if( !impl::get_betas_and_covariance_for_cohort(
-				data_getter,
-				&impl::basic_missingness_filter,
-				betas,
-				covariance,
-				non_missingness,
-				m_effect_parameter_names.size(),
-				i
-			) ) {
+			bool const obtained = (
+				impl::get_betas_and_covariance_for_cohort(
+					data_getter,
+					&impl::basic_missingness_filter,
+					betas,
+					covariance,
+					non_missingness,
+					m_effect_parameter_names.size(),
+					i
+				) && ( non_missingness.sum() == m_effect_parameter_names.size() )
+			) ;
+
+			if( !obtained ) {
 				callback( m_cohort_names[i] + ":bf", genfile::MissingValue() ) ;
-				return ;
 			}
 			else {
 				double mean_bf = 0.0 ;
 				for( std::size_t i = 0; i < m_model.size(); ++i ) {
 					Eigen::MatrixXd const prior = m_model.covariance(i) ;
+#if DEBUG_BINGWA
+					std::cerr << "PRIOR = \n" << prior << ".\n" ;
+					std::cerr << "BETAs = \n" << betas.transpose() << ".\n" ;
+					std::cerr << "NONMISSINGNESS = \n" << non_missingness << ".\n" ;
+					std::cerr << "COV = \n" << covariance << ".\n" ;
+#endif
 					double bf = impl::compute_bayes_factor( prior, covariance, betas ) ;
 					if( bf != bf ) {
 						bf = 1 ;
@@ -1637,13 +1656,14 @@ struct BingwaApplication: public appcontext::ApplicationContext {
 public:
 	typedef std::map< std::string, std::vector< std::string > > GroupDefinition ;
 	typedef std::map< std::string, std::vector< std::string > > ValueListSet ;
+	typedef std::map< std::string, ValueListSet > SetOfValueListSets ;
 	typedef std::set< std::string > PriorNames ;
 	typedef std::map< std::string, double > PriorWeights ;
+	enum { eBetweenPopulationCorrelation = 0, eSD = 1, eCorrelation = 2 } ;
 	typedef boost::tuple< std::vector< std::string >, std::vector< std::string >, std::vector< std::string > > CovarianceSpec ;
 	typedef std::vector< CovarianceSpec > CovarianceSpecs ;
 	typedef std::pair< CovarianceSpec, Eigen::MatrixXd > Prior ;
 	typedef std::multimap< std::string, Prior > Priors ;
-	enum { eBetweenPopulationCorrelation = 0, eSD = 1, eCorrelation = 2 } ;
 
 public:
 	BingwaApplication( int argc, char **argv ):
@@ -1739,6 +1759,7 @@ public:
 			}
 		}
 	
+
 		if( options().check( "-data" ) && options().get_values< std::string >( "-data" ).size() > 0 ) {
 			m_processor->add_computation(
 				"PerCohortValueReporter",
@@ -1751,6 +1772,38 @@ public:
 			else {
 				bingwa::BingwaComputation::Filter filter = get_filter( options() ) ;
 
+				// Prior sd and tau sets
+				if( options().check( "-define-sd-set" )) {
+					m_value_sets[ "sd" ] = parse_value_list( options().get_values< std::string >( "-define-sd-set" )) ;
+				} else {
+					m_value_sets[ "sd" ] ; // empty map
+				}
+
+				if( options().check( "-define-tau-set" )) {
+					m_value_sets[ "tau" ] = parse_value_list( options().get_values< std::string >( "-define-tau-set" )) ;
+				} else {
+					m_value_sets[ "tau" ] ; // empty map
+				}
+
+				// Per-cohort priors...
+				{
+					Priors const priors = get_per_cohort_priors( options() ) ;
+					PerCohortBayesFactor::UniquePtr bf(
+						new PerCohortBayesFactor(
+							cohort_names,
+							PerCohortBayesFactor::ModelSpec(
+								"per-cohort",
+								priors.begin(), priors.end(),
+								1.0
+							)
+						)
+					) ;
+					m_processor->add_computation(
+						"per-cohort",
+						bingwa::BingwaComputation::UniquePtr( bf.release() )
+					) ;
+				}
+		
 				{
 					MultivariateFixedEffectMetaAnalysis::UniquePtr computation(
 						new MultivariateFixedEffectMetaAnalysis( "FixedEffectMetaAnalysis" )
@@ -1761,10 +1814,12 @@ public:
 						bingwa::BingwaComputation::UniquePtr( computation.release() )
 					) ;
 				}
+
 				if( options().check_if_option_was_supplied_in_group( "Bayesian meta-analysis options" ) ) {
-					Priors const priors = get_priors( options(), cohort_names ) ;
+					Priors const priors = get_cross_cohort_priors( options(), cohort_names ) ;
 					PriorNames const prior_names = get_prior_names( priors ) ;
 					std::map< std::string, double > prior_weights = get_prior_weights( options(), prior_names ) ;
+					assert( priors.size() > 0 ) ;
 					{
 						double total_weight = 0 ;
 						for( std::map< std::string, double >::const_iterator i = prior_weights.begin(); i != prior_weights.end(); ++i ) {
@@ -1792,33 +1847,15 @@ public:
 									prior_weights[ *i ]
 								)
 							) ;
-							averager->set_filter( filter ) ;
 						}
-						
+						averager->set_filter( filter ) ;
+					
 						m_processor->add_computation(
 							"Average",
 							bingwa::BingwaComputation::UniquePtr( averager.release() )
 						) ;
 					}
-					
 					summarise_priors( priors, prior_names, prior_weights, cohort_names ) ;
-				}
-				{
-					Prior const prior = get_per_population_prior( options() ) ;
-					PerCohortBayesFactor::UniquePtr bf(
-						new PerCohortBayesFactor(
-							cohort_names,
-							PerCohortBayesFactor::ModelSpec(
-								"per-cohort",
-								std::make_pair( "per-cohort", prior ),
-								1.0
-							)
-						)
-					) ;
-					m_processor->add_computation(
-						"per-cohort",
-						bingwa::BingwaComputation::UniquePtr( bf.release() )
-					) ;
 				}
 			}
 		}
@@ -1891,7 +1928,7 @@ public:
 					model_spec = model_specs[i] ;
 				}
 			}
-			std::vector< CovarianceSpec > const covariance_specs = parse_covariance_spec( model_spec ) ;
+			std::vector< CovarianceSpec > const covariance_specs = parse_covariance_spec( model_spec, m_value_sets ) ;
 
 #if DEBUG_BINGWA
 			std::cerr << "get_simple_priors(): for model " << model_spec << ", got " << covariance_specs.size() << " specs.\n" ;
@@ -2285,7 +2322,7 @@ public:
 		return result ;
 	}
 	
-	std::vector< CovarianceSpec > parse_covariance_spec( std::string const& spec ) const {
+	std::vector< CovarianceSpec > parse_covariance_spec( std::string const& spec, SetOfValueListSets const& value_sets ) const {
 		using namespace genfile::string_utils ;
 		std::vector< std::string > parameters = split_and_strip( spec, "/" ) ;
 
@@ -2310,10 +2347,10 @@ public:
 			throw genfile::BadArgumentError(
 				"BingwaProcessor::parse_covariance_spec()",
 				"spec=\"" + spec + "\"",
-				"Parameter spec \"" + spec + "\" is malformed, should be of the form "
-				"tau=[tau]/sd=[sd]"
-				" or tau=[tau]/sd=[sd1 sd1...]/cor=[cor12 cor13...]"
-				" or sd=[sd1 sd2...]/cor=[cor11 cor12 cor13...]"
+				"Parameter spec \"" + spec + "\" is malformed, should be of one of these forms:\n"
+				" - tau=[tau]/sd=[sd] for a multi-cohort prior with a single parameter\n"
+				" - tau=[tau]/sd=[sd1 sd1...]/cor=[cor12 cor13...] for a multi-cohort prior"
+				" - sd=[sd1 sd2...]/cor=[cor11 cor12 cor13...] for a single-cohort prior, or full multi-cohort prior"
 			) ;
 		}
 
@@ -2347,8 +2384,8 @@ public:
 		
 		return expand_taus_and_sds(
 			CovarianceSpec( taus, sds, cor ),
-			m_value_sets.at( "sd" ),
-			m_value_sets.at( "tau" )
+			value_sets.at( "sd" ),
+			value_sets.at( "tau" )
 		) ;
 	}
 
@@ -2436,30 +2473,55 @@ public:
 		return result ;
 	}
 
-	Prior get_per_population_prior( appcontext::OptionProcessor const& options ) {
-		Prior result ;
+	Priors get_per_cohort_priors( appcontext::OptionProcessor const& options ) {
+		using genfile::string_utils::to_string ;
+		Priors result ;
+		std::string const& model_spec = options.get< std::string >( "-per-cohort-prior" ) ;
+		std::vector< CovarianceSpec > const covariance_specs = parse_covariance_spec( model_spec, m_value_sets ) ;
+
+		int const D = m_processor->get_number_of_effect_parameters() ;
+
+		std::vector< std::pair< std::string, Prior > > components ;
+		for( std::size_t i = 0; i < covariance_specs.size(); ++i ) {
+			CovarianceSpec const& covariance_spec = covariance_specs[i] ;
+			if( int( covariance_spec.get<eBetweenPopulationCorrelation>().size() ) != 0 ) {
+				throw genfile::BadArgumentError(
+					"BingwaProcessor::get_per_cohort_prior()",
+					"model_spec=\"" + model_spec + "\"",
+					"In model spec \"" + model_spec + "\", you can't specify between-cohort correlation in a per-cohort prior."
+				) ;
+			}
+			if( int( covariance_spec.get<eSD>().size() ) != D ) {
+				throw genfile::BadArgumentError(
+					"BingwaProcessor::get_per_cohort_prior()",
+					"model_spec=\"" + model_spec + "\"",
+					"In model spec \"" + model_spec + "\", number of sds specified ("
+					+ to_string( covariance_spec.get<eSD>().size() )
+					+ ") does not match number of effect size parameters (" + to_string( D ) + ")"
+				) ;
+			}
+			
+			Eigen::MatrixXd const covariance = parse_covariance_matrix( covariance_specs[i].get< eSD >(), covariance_specs[i].get< eCorrelation >() ) ;
+			result.insert(
+				std::make_pair(
+					"per-cohort",
+					Prior( covariance_spec, covariance )
+				)
+			) ;
+		}
 		return result ;
 	}
 
-	Priors get_priors( appcontext::OptionProcessor const& options, std::vector< std::string > const& cohort_names ) {
+	Priors get_cross_cohort_priors(
+		appcontext::OptionProcessor const& options,
+		std::vector< std::string > const& cohort_names
+	) {
 		Priors result ;
 		using genfile::string_utils::to_string ;
 		using genfile::string_utils::to_repr ;
 		using genfile::string_utils::split_and_strip_discarding_empty_entries ;
 		int const N = options.get_values< std::string >( "-data" ).size() ;
 		
-		if( options.check( "-define-sd-set" )) {
-			m_value_sets[ "sd" ] = parse_value_list( options.get_values< std::string >( "-define-sd-set" )) ;
-		} else {
-			m_value_sets[ "sd" ] ; // empty map
-		}
-
-		if( options.check( "-define-tau-set" )) {
-			m_value_sets[ "tau" ] = parse_value_list( options.get_values< std::string >( "-define-tau-set" )) ;
-		} else {
-			m_value_sets[ "tau" ] ; // empty map
-		}
-
 		{
 			std::vector< std::string > model_specs ;
 			if( options.check( "-prior" ) ) {
@@ -2563,10 +2625,6 @@ public:
 		return get_correlation_matrix( n, tau ) * sd * sd ;
 	}
 
-	Eigen::MatrixXd get_prior_matrix( int const n, std::string const& matrix_spec, double const sd ) const {
-		return parse_correlation_matrix( n, matrix_spec ) * sd * sd ;
-	}
-
 	Eigen::MatrixXd get_correlation_matrix( int const n, double tau ) const {
 		Eigen::MatrixXd result = Eigen::MatrixXd::Identity( n, n ) ;
 		for( int i = 0; i < (n-1); ++i ) {
@@ -2577,15 +2635,29 @@ public:
 		return result ;
 	}
 
-	Eigen::MatrixXd parse_correlation_matrix( int const N, std::string const& matrix_spec ) const {
+	Eigen::MatrixXd parse_covariance_matrix(
+		std::vector< std::string > const sd_spec,
+		std::vector< std::string > const& correlation_spec
+	) const {
+		using namespace genfile::string_utils ;
+		int const N = sd_spec.size() ;
+		Eigen::MatrixXd result = parse_correlation_matrix( N, correlation_spec ) ;
+		Eigen::MatrixXd sds = Eigen::MatrixXd::Identity( N, N ) ;
+		for( std::size_t i = 0; i < sd_spec.size(); ++i ) {
+			sds(i,i) = to_repr< double >( sd_spec[i] ) ;
+		}
+		result = sds * result * sds ;
+		return result ;
+	}
+
+	Eigen::MatrixXd parse_correlation_matrix( int const N, std::vector< std::string > const& correlations ) const {
 		using namespace genfile::string_utils ;
 		Eigen::MatrixXd result = Eigen::MatrixXd::Zero( N, N ) ;
-		std::vector< std::string > values = genfile::string_utils::split_and_strip( matrix_spec, "," ) ;
-		if( values.size() != (( N * (N+1) ) / 2 ) ) {
+		if( correlations.size() != (( N * (N+1) ) / 2 ) ) {
 			throw genfile::BadArgumentError(
 				"BingwaProcessor::parse_correlation_matrix()",
-				"matrix_spec=\"" + matrix_spec + "\"",
-				"Number of values (" + to_string( values.size() ) + ") is not consistent with the upper triangle of an "
+				"matrix_spec=\"" + join( correlations, "," ) + "\"",
+				"Number of values (" + to_string( correlations.size() ) + ") is not consistent with the upper triangle of an "
 					+ to_string(N) + "x" + to_string(N) + " matrix (should be " + to_string( ( N * (N+1) ) / 2 ) + ")"
 			) ;
 		}
@@ -2596,7 +2668,7 @@ public:
 				for( int j = 0; j < N; ++j ) {
 					result( i, j )
 						= ( j >= i ) ?
-							genfile::string_utils::to_repr< double >( values[ index++ ] )
+							genfile::string_utils::to_repr< double >( correlations[ index++ ] )
 							:
 							result( j, i ) ;
 				}
@@ -2604,7 +2676,6 @@ public:
 		}
 		return result ;
 	}
-
 
 	PriorNames get_prior_names( Priors const& priors ) const {
 		PriorNames result ;
@@ -3145,7 +3216,7 @@ public:
 	}
 	
 private:
-	std::map< std::string, ValueListSet > m_value_sets ;
+	SetOfValueListSets m_value_sets ;
 	BingwaProcessor::UniquePtr m_processor ;
 } ;
 
