@@ -12,6 +12,7 @@
 #include <boost/shared_ptr.hpp>
 #include <boost/tuple/tuple.hpp>
 #include <boost/bimap.hpp>
+#include <boost/ptr_container/ptr_vector.hpp>
 #include "genfile/VariantIdentifyingData.hpp"
 #include "genfile/CohortIndividualSource.hpp"
 #include "genfile/VariantEntry.hpp"
@@ -26,11 +27,17 @@ namespace qcdb {
 		typedef boost::shared_ptr< FlatTableDBOutputter > SharedPtr ;
 		typedef DBOutputter::Metadata Metadata ;
 		static UniquePtr create(
-			std::string const& filename, std::string const& cohort_name, std::string const& analysis_description, Metadata const& metadata,
+			std::string const& filename,
+			std::string const& cohort_name,
+			std::string const& analysis_description,
+			Metadata const& metadata,
 			std::string const& snp_match_fields = "position,alleles"
 		 ) ;
 		static SharedPtr create_shared(
-			std::string const& filename, std::string const& cohort_name, std::string const& analysis_description, Metadata const& metadata,
+			std::string const& filename,
+			std::string const& cohort_name,
+			std::string const& analysis_description,
+			Metadata const& metadata,
 			std::string const& snp_match_fields = "position,alleles"
 		) ;
 
@@ -44,10 +51,18 @@ namespace qcdb {
 
 		~FlatTableDBOutputter() ;
 
-		void set_table_name( std::string const& table_name ) ;
+		void add_table( std::string const&, boost::function< bool( std::string const& ) > ) ;
+		void add_meta_table(
+			std::string const& tableName,
+			std::string const& rowName,
+			std::size_t number_of_columns,
+			boost::function< std::string ( std::size_t ) > getColumnName,
+			boost::function< genfile::VariantEntry( std::size_t ) > getColumnValue
+		) ;
 		
 		void add_variable(
-			std::string const& 
+			std::string const& variable,
+			std::string const& type
 		) ;
 		
 		void create_new_variant( genfile::VariantIdentifyingData const& ) ;
@@ -63,17 +78,22 @@ namespace qcdb {
 
 	private:
 		DBOutputter m_outputter ;
-		std::string m_table_name ;
+		std::vector< std::string > m_table_names ;
+		boost::ptr_vector< db::SQLStatement > m_insert_data_sql ;
+		typedef boost::function< bool( std::string const& ) > ColumnSelector ;
+		std::vector< ColumnSelector > m_column_selectors ;
+
 		std::size_t const m_max_snps_per_block ;
-		db::Connection::StatementPtr m_insert_data_sql ;
+		//db::Connection::StatementPtr m_insert_data_sql ;
 		std::vector< genfile::VariantIdentifyingData > m_snps ;
-		typedef boost::bimap< std::string, std::size_t > VariableMap ;
+		typedef boost::bimap< std::string, std::pair< std::size_t, std::string > > VariableMap ;
 		VariableMap m_variables ;
 		typedef std::map< std::pair< std::size_t, std::size_t >, genfile::VariantEntry > ValueMap ;
 		ValueMap m_values ;
-
+		std::vector< std::map< std::string, std::size_t > > m_column_maps ;
+		
 	private:
-		std::string get_table_name() const ;
+		std::vector< std::string > const& get_table_names() const ;
 		void store_block() ;
 		void create_schema() ;
 		void store_data_for_variant(

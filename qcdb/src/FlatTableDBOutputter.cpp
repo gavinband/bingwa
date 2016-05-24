@@ -9,6 +9,7 @@
 #include <boost/shared_ptr.hpp>
 #include <boost/tuple/tuple.hpp>
 #include <boost/thread/thread.hpp>
+#include <boost/ptr_container/ptr_map.hpp>
 #include "genfile/VariantIdentifyingData.hpp"
 #include "genfile/VariantEntry.hpp"
 #include "genfile/Error.hpp"
@@ -43,18 +44,48 @@ namespace qcdb {
 		
 	):
 		m_outputter( filename, analysis_name, analysis_description, metadata, boost::optional< db::Connection::RowId >(), snp_match_fields ),
-		m_table_name( "Analysis" + genfile::string_utils::to_string( m_outputter.analysis_id() ) ),
 		m_max_snps_per_block( 1000 )
 	{}
 
 	FlatTableDBOutputter::~FlatTableDBOutputter() {
 	}
 	
-	void FlatTableDBOutputter::set_table_name( std::string const& table_name ) {
+	void FlatTableDBOutputter::add_table( std::string const& table_name, ColumnSelector selector ) {
 		if( table_name.find_first_not_of( "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_" ) != std::string::npos ) {
 			throw genfile::BadArgumentError( "qcdb::FlatTableDBOutputter::set_table_name()", "table_name=\"" + table_name + "\"" ) ;
 		}
-		m_table_name = table_name ;
+		m_table_names.push_back( table_name ) ;
+		m_column_selectors.push_back( selector ) ;
+	}
+
+	void FlatTableDBOutputter::add_meta_table(
+		std::string const& tableName,
+		std::string const& rowName,
+		std::size_t number_of_columns,
+		boost::function< std::string ( std::size_t ) > getColumnName,
+		boost::function< genfile::VariantEntry( std::size_t ) > getColumnValue
+	) {
+		std::ostringstream schema_sql ;
+		std::ostringstream insert_sql ;
+		schema_sql << "CREATE TABLE IF NOT EXISTS `" << tableName << "` ("
+			<< "analysis_id INTEGER NOT NULL, "
+			<< "name TEXT NOT NULL" ;
+		insert_sql << "INSERT INTO `" << tableName << "` VALUES( ?1, ?2" ;
+		for( std::size_t i = 0; i < number_of_columns; ++i ) {
+			schema_sql << ", `" << getColumnName(i) << "`" ;
+			insert_sql << ", ?" << i+3 ;
+		}
+		schema_sql << ");" ;
+		insert_sql << ");" ;
+		
+		m_outputter.connection().run_statement( schema_sql.str() ) ;
+		db::Connection::StatementPtr stmt = m_outputter.connection().get_statement( insert_sql.str() ) ;
+		stmt->bind( 1, analysis_id() ) ;
+		stmt->bind( 2, rowName ) ;
+		for( std::size_t i = 0; i < number_of_columns; ++i ) {
+			stmt->bind( i+3, getColumnValue(i) ) ;
+		}
+		stmt->step() ;
 	}
 
 	FlatTableDBOutputter::AnalysisId FlatTableDBOutputter::analysis_id() const {
@@ -68,23 +99,25 @@ namespace qcdb {
 
 		if( options & eCreateIndices ) {
 			db::Connection::ScopedTransactionPtr transaction = m_outputter.connection().open_transaction( 7200 ) ;
-			m_outputter.connection().run_statement( "CREATE INDEX IF NOT EXISTS " + m_table_name + "_index ON " + m_table_name + "( variant_id )" ) ;
+			for( std::size_t i = 0; i < m_table_names.size(); ++i ) {
+				m_outputter.connection().run_statement( "CREATE INDEX IF NOT EXISTS `" + m_table_names[i] + "_index` ON `" + m_table_names[i] + "`( variant_id )" ) ;
+			}
 		}
 
 		m_outputter.finalise( options ) ;
 	}
 
-	void FlatTableDBOutputter::add_variable( std::string const& variable ) {
+	void FlatTableDBOutputter::add_variable( std::string const& variable, std::string const& type ) {
 		VariableMap::left_const_iterator where = m_variables.left.find( variable ) ;
 		if( where == m_variables.left.end() ) {
-			if( m_insert_data_sql.get() ) {
+			if( m_insert_data_sql.size() > 0 ) {
 				// Uh-oh, table columns are already fixed.
 				// TODO: alter to put this data in SummaryData table?
 				throw genfile::BadArgumentError( "qcdb::FlatTableDBOutputter::add_variable()", "variable=\"" + variable + "\"" ) ;
 			}
 			else {
 				// Still have time to add the variable to our list of variables, retaining the order of addition.
-				m_variables.left.insert( VariableMap::left_value_type( variable, m_variables.size() ) ) ;
+				m_variables.left.insert( VariableMap::left_value_type( variable, std::make_pair( m_variables.size(), type ) ) ) ;
 			}
 		}
 	}
@@ -116,25 +149,25 @@ namespace qcdb {
 
 		VariableMap::left_const_iterator where = m_variables.left.find( variable ) ;
 		if( where == m_variables.left.end() ) {
-			if( m_insert_data_sql.get() ) {
+			if( m_insert_data_sql.size() > 0 ) {
 				// Uh-oh, table columns are already fixed.
 				// TODO: alter to put this data in SummaryData table?
 				throw genfile::BadArgumentError( "qcdb::FlatTableDBOutputter::store_per_variant_data()", "variable=\"" + variable + "\"" ) ;
 			}
 			else {
 				// Still have time to add the variable to our list of variables, retaining the order of addition.
-				where = m_variables.left.insert( VariableMap::left_value_type( variable, m_variables.size() ) ).first ;
+				where = m_variables.left.insert( VariableMap::left_value_type( variable, std::make_pair( m_variables.size(), "NULL" ) ) ).first ;
 			}
 		}
 
 		// Store the value of this variable
-		m_values[ std::make_pair( m_snps.size() - 1, where->second ) ] = value ;
+		m_values[ std::make_pair( m_snps.size() - 1, where->second.first ) ] = value ;
 	}
 
 	void FlatTableDBOutputter::store_block() {
 		db::Connection::ScopedTransactionPtr transaction = m_outputter.connection().open_transaction( 7200 ) ;
 
-		if( !m_insert_data_sql.get() ) {
+		if( m_insert_data_sql.empty() ) {
 			create_schema() ;
 			create_variables() ;
 		}
@@ -144,98 +177,110 @@ namespace qcdb {
 		}
 	}
 
-	std::string FlatTableDBOutputter::get_table_name() const {
-		return m_table_name ;
+	std::vector< std::string > const& FlatTableDBOutputter::get_table_names() const {
+		return m_table_names ;
 	}
 
 	void FlatTableDBOutputter::create_schema() {
 		using genfile::string_utils::to_string ;
-		std::ostringstream schema_sql ;
-		std::ostringstream index_sql ;
-		std::ostringstream insert_data_sql ;
-		std::ostringstream insert_data_sql_columns ;
-		std::ostringstream insert_data_sql_values ;
-		std::string const& table_name = m_table_name ;
-		schema_sql << "CREATE TABLE IF NOT EXISTS "
-			<< table_name
-			<< " ( "
-			"analysis_id INT NOT NULL REFERENCES Entity( id ), "
-			"variant_id INT NOT NULL REFERENCES Variant( id ), "
-			"chromosome TEXT, "
-			"position INTEGER"
-		;
-		
-		insert_data_sql << "INSERT INTO "
-			<< table_name ;
-		insert_data_sql_columns << "( analysis_id, variant_id, chromosome, position" ;
-		insert_data_sql_values << "VALUES( ?1, ?2, ?3, ?4" ;
-		
-		VariableMap::right_const_iterator
-			var_i = m_variables.right.begin(),
-			end_var_i = m_variables.right.end() ;
+		assert( m_insert_data_sql.size() == 0 ) ;
+		assert( m_column_maps.size() == 0 ) ;
+		m_column_maps.resize( m_table_names.size() ) ;
+		for( std::size_t table_i = 0; table_i < m_table_names.size(); ++table_i ) {
+			std::string const& table_name = m_table_names[table_i] ;
 
-		for( std::size_t bind_i = 5; var_i != end_var_i; ++var_i, ++bind_i ) {
-			schema_sql << ", " ;
-			insert_data_sql_columns << ", " ;
-			insert_data_sql_values << ", " ;
-			schema_sql
-				<< '"'
-				<< var_i->second
-				<< '"'
-				<< " NULL" ;
+			std::ostringstream schema_sql ;
+			std::ostringstream index_sql ;
+			std::ostringstream insert_data_sql ;
+			std::ostringstream insert_data_sql_columns ;
+			std::ostringstream insert_data_sql_values ;
+			std::map< std::string, std::size_t > column_map ;
+			
+			schema_sql << "CREATE TABLE IF NOT EXISTS `"
+				<< table_name
+				<< "` ( "
+				"analysis_id INT NOT NULL REFERENCES Entity( id ), "
+				"variant_id INT NOT NULL REFERENCES Variant( id ), "
+				"chromosome TEXT, "
+				"position INTEGER"
+			;
+		
+			insert_data_sql << "INSERT INTO "
+				<< table_name ;
+			insert_data_sql_columns << "( analysis_id, variant_id, chromosome, position" ;
+			insert_data_sql_values << "VALUES( ?1, ?2, ?3, ?4" ;
+		
+			VariableMap::right_const_iterator
+				var_i = m_variables.right.begin(),
+				end_var_i = m_variables.right.end() ;
+
+			for( std::size_t bind_i = 5; var_i != end_var_i; ++var_i ) {
+				std::string const& variable = var_i->second ;
+				if( m_column_selectors[table_i]( variable ) ) {
+					schema_sql << ", " ;
+					insert_data_sql_columns << ", " ;
+					insert_data_sql_values << ", " ;
+					schema_sql
+						<< '`'
+						<< var_i->second
+						<< '`'
+						<< " "
+						<< var_i->first.second ;
 				
-			insert_data_sql_columns << '"' << var_i->second << '"' ;
-			insert_data_sql_values << "?" << to_string( bind_i ) ;
+					insert_data_sql_columns << '`' << variable << '`' ;
+					insert_data_sql_values << "?" << to_string( bind_i ) ;
+					column_map[ variable ] = bind_i ;
+					++bind_i ;
+				}
+			}
+
+			schema_sql << " ) ; " ;
+
+			insert_data_sql_columns << ") " ;
+			insert_data_sql_values << ") ; " ;
+
+	#if DEBUG_FLATTABLEDBOUTPUTTER
+			std::cerr << "Creating table " << table_name << " using this SQL:\n"
+				<< schema_sql.str()
+				<< "\n" ;
+	#endif		
+			m_outputter.connection().run_statement( schema_sql.str() ) ;
+
+			std::ostringstream view_sql ;	
+			view_sql
+				<< "CREATE VIEW IF NOT EXISTS \"" << table_name << "View\" AS "
+				<< "SELECT V.rsid, V.alleleA, V.alleleB, A.name AS analysis, T.* FROM \""
+				<< table_name << "\" T "
+				<< "INNER JOIN Variant V ON V.id = T.variant_id "
+				<< "INNER JOIN Analysis A ON A.id = T.analysis_id"
+			;
+
+#if DEBUG_FLATTABLEDBOUTPUTTER
+			std::cerr << "Creating view using SQL:\n" << view_sql.str() << "\n" ;
+#endif
+			m_outputter.connection().run_statement( view_sql.str() ) ;
+
+			insert_data_sql << " " << insert_data_sql_columns.str() << " " << insert_data_sql_values.str() ;
+#if DEBUG_FLATTABLEDBOUTPUTTER
+			std::cerr << "Inserts will use this SQL:\n"
+				<< insert_data_sql.str()
+				<< "\n" ;
+#endif
+			
+			m_insert_data_sql.push_back(
+				m_outputter.connection().get_statement(
+					insert_data_sql.str()
+				)
+			) ;
+			
+			m_column_maps[table_i] = column_map ;
+
+			m_outputter.get_or_create_entity_data(
+				m_outputter.analysis_id(),
+				m_outputter.get_or_create_entity( "table", "Table holding results of an analysis" ),
+				table_name + "View"
+			) ;
 		}
-
-		schema_sql << " ) ; " ;
-
-		insert_data_sql_columns << ") " ;
-		insert_data_sql_values << ") ; " ;
-
-#if DEBUG_FLATTABLEDBOUTPUTTER
-		std::cerr << "Creating table " << table_name << " using this SQL:\n"
-			<< schema_sql.str()
-			<< "\n" ;
-#endif		
-		m_outputter.connection().run_statement( schema_sql.str() ) ;
-
-		std::ostringstream view_sql ;	
-		view_sql
-			<< "CREATE VIEW IF NOT EXISTS \"" << table_name << "View\" AS "
-			<< "SELECT V.rsid, V.alleleA, V.alleleB, A.name AS analysis, T.* FROM \""
-			<< table_name << "\" T "
-			<< "INNER JOIN Variant V ON V.id = T.variant_id "
-			<< "INNER JOIN Analysis A ON A.id = T.analysis_id"
-		;
-
-#if DEBUG_FLATTABLEDBOUTPUTTER
-		std::cerr << "Creating view using SQL:\n" << view_sql.str() << "\n" ;
-#endif
-		m_outputter.connection().run_statement( view_sql.str() ) ;
-
-		insert_data_sql << " " << insert_data_sql_columns.str() << " " << insert_data_sql_values.str() ;
-#if DEBUG_FLATTABLEDBOUTPUTTER
-		std::cerr << "Inserts will use this SQL:\n"
-			<< insert_data_sql.str()
-			<< "\n" ;
-#endif
-		
-		m_insert_data_sql = m_outputter.connection().get_statement(
-			insert_data_sql.str()
-		) ;
-
-#if DEBUG_FLATTABLEDBOUTPUTTER
-		std::cerr << "Getting \"table\" entry...\n"  ;
-		db::Connection::RowId table_id = m_outputter.get_or_create_entity( "table", "Table holding results of an analysis" ) ;
-		std::cerr << "ok.\n" ;
-#endif
-
-		m_outputter.get_or_create_entity_data(
-			m_outputter.analysis_id(),
-			m_outputter.get_or_create_entity( "table", "Table holding results of an analysis" ),
-			table_name + "View"
-		) ;
 	}
 
 	void FlatTableDBOutputter::create_variables() {
@@ -254,25 +299,32 @@ namespace qcdb {
 		db::Connection::RowId const analysis_id,
 		db::Connection::RowId const variant_id
 	) {
-		m_insert_data_sql->bind( 1, analysis_id ) ;
-		m_insert_data_sql->bind( 2, variant_id ) ;
-		m_insert_data_sql->bind( 3, std::string( snp.get_position().chromosome() ) ) ;
-		m_insert_data_sql->bind( 4, snp.get_position().position() ) ;
+		for( std::size_t i = 0; i < m_table_names.size(); ++i ) {
+			db::SQLStatement& insert_data_sql = m_insert_data_sql[i] ;
+			insert_data_sql.bind( 1, analysis_id ) ;
+			insert_data_sql.bind( 2, variant_id ) ;
+			insert_data_sql.bind( 3, std::string( snp.get_position().chromosome() ) ) ;
+			insert_data_sql.bind( 4, snp.get_position().position() ) ;
 		
-		VariableMap::right_const_iterator
-			var_i = m_variables.right.begin(),
-			end_var_i = m_variables.right.end() ;
+			VariableMap::right_const_iterator
+				var_i = m_variables.right.begin(),
+				end_var_i = m_variables.right.end() ;
 		
-		for( std::size_t bind_i = 5; var_i != end_var_i; ++var_i, ++bind_i ) {
-			ValueMap::const_iterator where = m_values.find( std::make_pair( snp_i, var_i->first )) ;
-			if( where == m_values.end() ) {
-				m_insert_data_sql->bind( bind_i, genfile::MissingValue() ) ;
-			} else {
-				m_insert_data_sql->bind( bind_i, where->second ) ;
+			for( ; var_i != end_var_i; ++var_i ) {
+				std::string const& variable = var_i->second ;
+				std::map< std::string, std::size_t >::const_iterator column_i = m_column_maps[i].find( variable ) ;
+				if( column_i != m_column_maps[i].end() ) {
+					ValueMap::const_iterator value_i = m_values.find( std::make_pair( snp_i, var_i->first.first )) ;
+					if( value_i == m_values.end() ) {
+						insert_data_sql.bind( column_i->second, genfile::MissingValue() ) ;
+					} else {
+						insert_data_sql.bind( column_i->second, value_i->second ) ;
+					}
+				}
 			}
-		}
 		
-		m_insert_data_sql->step() ;
-		m_insert_data_sql->reset() ;
+			insert_data_sql.step() ;
+			insert_data_sql.reset() ;
+		}
 	}
 }

@@ -20,8 +20,18 @@ namespace qcdb {
 		
 		virtual ~Storage() {} ;
 
+		virtual void add_table( std::string const&, boost::function< bool( std::string const& ) > ) = 0 ;
+		virtual void add_meta_table(
+			std::string const& tableName,
+			std::string const& rowName,
+			std::size_t number_of_columns,
+			boost::function< std::string ( std::size_t ) > getColumnName,
+			boost::function< genfile::VariantEntry( std::size_t ) > getColumnValue
+		) = 0 ;
+
 		virtual void add_variable(
-			std::string const& 
+			std::string const& variable,
+			std::string const& type
 		) = 0 ;
 
 		virtual void create_new_variant( genfile::VariantIdentifyingData const& ) = 0 ;

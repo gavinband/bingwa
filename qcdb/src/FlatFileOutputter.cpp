@@ -6,6 +6,8 @@
 
 #include <string>
 #include <memory>
+#include <iostream>
+#include <iomanip>
 #include <boost/bimap.hpp>
 #include <boost/bind.hpp>
 #include "genfile/VariantEntry.hpp"
@@ -59,8 +61,40 @@ namespace qcdb {
 		return 0 ;
 	}
 
+	void FlatFileOutputter::add_table( std::string const&, boost::function< bool( std::string const& ) > ) {
+		// do nothing, we do not support multiple tables.
+	}
+
+	void FlatFileOutputter::add_meta_table(
+		std::string const& tableName,
+		std::string const& rowName,
+		std::size_t number_of_columns,
+		boost::function< std::string ( std::size_t ) > getColumnName,
+		boost::function< genfile::VariantEntry( std::size_t ) > getColumnValue
+	) {
+		std::string const prefix = "- " + std::string( tableName.size() + 1, ' ' ) ;
+		std::ostringstream str ;
+		str << "- " << tableName << ": " << std::setw( std::max( rowName.size(), std::size_t(10) )) << "name" ;
+		std::vector< std::size_t > column_widths;
+		for( std::size_t i = 0; i < number_of_columns; ++i ) {
+			std::string const& column_name = getColumnName(i) ;
+			column_widths.push_back( std::max( column_name.size(), std::size_t(10) ) ) ;
+			str << " " << std::setw( column_widths[i] ) << column_name ;
+		}
+		str << "\n"
+			<< prefix
+			<< std::setw( std::max( rowName.size(), std::size_t(10) ))
+			<< rowName ;
+		for( std::size_t i = 0; i < number_of_columns; ++i ) {
+			str << " " << std::setw( column_widths[i] ) << getColumnValue(i) ;
+		}
+		str << "\n" ;
+		m_metatables.push_back( str.str() ) ;
+	}
+
 	void FlatFileOutputter::add_variable(
-		std::string const& variable
+		std::string const& variable,
+		std::string const& type
 	) {
 		VariableMap::left_const_iterator where = m_variables.left.find( variable ) ;
 		if( where == m_variables.left.end() ) {
@@ -164,6 +198,13 @@ namespace qcdb {
 				<< genfile::string_utils::join( i->second.first, " " )
 				<< " (" + i->second.second + ")\n" ;
 		}
+		if( m_metatables.size() > 0 ) {
+			str << "\nMetadata:\n" ;
+			for( std::size_t i = 0; i < m_metatables.size(); ++i ) {
+				str << m_metatables[i] ;
+			}
+		}
+		
 		return str.str() ;
 	}
 }

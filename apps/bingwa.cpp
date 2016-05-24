@@ -10,6 +10,7 @@
 #include <memory>
 #include <set>
 #include <map>
+#include <algorithm>
 #include <utility>
 #include <boost/bimap.hpp>
 #include <boost/bind.hpp>
@@ -217,8 +218,6 @@ struct BingwaOptions: public appcontext::CmdLineOptionProcessor {
 				.set_is_required()
 				.set_takes_single_value() ;
 
-			options[ "-flat-file" ]
-				.set_description( "Specify the output file should be a flat file, not a db." ) ;
 			options[ "-noindex" ]
 				.set_description( "Specify that " + globals::program_name + " should not create large indices on database tables when finalising storage."
 					" Indices are usually desired.  However, when running very large jobs parallelised across subsets, it is generally faster to"
@@ -234,13 +233,16 @@ struct BingwaOptions: public appcontext::CmdLineOptionProcessor {
 			options[ "-cohort-names" ]
 				.set_description( "Specify a name to label results from this analysis with" )
 				.set_takes_values_until_next_option() ;
-			options[ "-table-name" ]
-				.set_description( "Specify a name for the table to use." )
-				.set_takes_single_value() ;
+			options[ "-table-prefix" ]
+				.set_description( "Specify a prefix for table names for the current analysis." )
+				.set_takes_single_value()
+				.set_default_value( "Bingwa" ) ;
 
 			options[ "-log" ]
 				.set_description( "Specify the path of a log file; all screen output will be copied to the file." )
 				.set_takes_single_value() ;
+			options[ "-verbose" ]
+				.set_description( "Be verbose about screen/log output." ) ;
 		}
 
 		{
@@ -259,10 +261,12 @@ struct BingwaOptions: public appcontext::CmdLineOptionProcessor {
 				.set_minimum_multiplicity( 0 )
 				.set_maximum_multiplicity( 1 ) ;
 
-			options[ "-per-cohort-prior" ]
-				.set_description( "Specify a prior model to use for per-population BFs.\n" )
-				.set_takes_single_value()
-				.set_default_value( "sd=0.2/cor=1" ) ;
+			options[ "-subsets" ]
+				.set_description(
+					"Specify that all cross-population priors should be applied to subsets of cohorts.\n"
+					"Possible values are \"all\" (generate all 2^k subsets) or \"contiguous\" (generate all contiguous subsets)"
+				)
+				.set_takes_single_value() ;
 
 			options.declare_group( "Bayesian meta-analysis options" ) ;
 			options[ "-define-tau-set" ]
@@ -292,6 +296,11 @@ struct BingwaOptions: public appcontext::CmdLineOptionProcessor {
 				.set_takes_single_value()
 				.set_minimum_multiplicity( 0 )
 				.set_maximum_multiplicity( 1 ) ;
+
+			options[ "-per-cohort-prior" ]
+				.set_description( "Specify a prior model to use when computing bayes factor in each population.\n" )
+				.set_takes_single_value()
+				.set_default_value( "sd=0.2/cor=1" ) ;
 
 			options[ "-prior-weights" ]
 				.set_description( "Specify prior weights for each model. Each argument must be of the form"
@@ -576,6 +585,44 @@ namespace impl {
 		}
 		return ostr.str() ;
 	}
+	
+	std::vector< std::string > parse_sqlite_filespec( std::string const& spec ) {
+		std::vector< std::string > elts = genfile::string_utils::split( spec, ":" ) ;
+		if( spec.size() > 9 && spec.substr(0,9) == "sqlite://" ) {
+			elts.erase( elts.begin() ) ;
+		}
+		assert( elts.size() >= 1 ) ;
+		if( elts.size() > 3 ) {
+			throw genfile::BadArgumentError(
+				"QCToolProcessor::parse_sqlite_filespace()",
+				"spec=\"" + spec + "\"",
+				"Expected format for sqlite filespec is sqlite://<file name>[:<bf table name>][:<count table name>]."
+			) ;
+		}
+		elts[0] = elts[0].substr( 2, elts[0].size() ) ;
+		return( elts ) ;
+	}
+	
+	std::string get_output_filetype( std::string const& filename ) {
+		if( (filename.size() >= 7 && filename.substr( 0, 9 ) == "sqlite://" )
+			|| ( filename.size() >= 7 && filename.substr( filename.size() - 7, 7 ) == ".sqlite" )
+		) {
+			return "sqlite" ;
+		} else {
+			return "flat" ;
+		}
+	}
+
+	template< typename Container >
+	void insert_into_map( Container* container, std::string const& a, std::string const& b ) {
+		container->insert( container->end(), std::make_pair( a, b ) ) ;
+	}
+	
+	typedef std::map< std::string, std::string > VariableMap ;
+	bool contains_variable( VariableMap const& map, std::string const& variable ) {
+		bool result = (map.find( variable ) != map.end() ) ;
+		return result ;
+	}
 }
 
 
@@ -828,25 +875,26 @@ struct MultivariateFixedEffectMetaAnalysis: public bingwa::BingwaComputation {
 		m_effect_parameter_names = names ;
 	}
 
-	void get_variables( boost::function< void ( std::string ) > callback ) const {
+	void get_variables( boost::function< void ( std::string, std::string ) > callback ) const {
 		std::size_t const numberOfEffects = m_effect_parameter_names.size() ;
 		if( numberOfEffects > 0 ) {
 			for( std::size_t i = 0; i < numberOfEffects; ++i ) {
-				callback( m_prefix + ( boost::format( ":beta_%d" ) % (i+1)).str() ) ;
+				//callback( m_prefix + ( boost::format( ":beta_%d" ) % (i+1)).str(), "FLOAT" ) ;
+				callback( m_prefix + ":" + m_effect_parameter_names.parameter_name(i), "FLOAT" ) ;
 			}
 			for( std::size_t i = 0; i < numberOfEffects; ++i ) {
-				callback( m_prefix + ( boost::format( ":se_%d" ) % (i+1)).str() ) ;
+				callback( m_prefix + ":" + m_effect_parameter_names.se_name(i), "FLOAT" ) ;
 			}
 			for( std::size_t i = 0; i < numberOfEffects; ++i ) {
-				callback( m_prefix + ( boost::format( ":wald_pvalue_%d" ) % (i+1)).str() ) ;
+				callback( m_prefix + ":" + m_effect_parameter_names.wald_pvalue_name(i), "FLOAT" ) ;
 			}
 			for( std::size_t i = 0; i < (numberOfEffects-1); ++i ) {
 				for( std::size_t j = i+1; j < numberOfEffects; ++j ) {
-					callback( m_prefix + ( boost::format( ":cov_%d,%d" ) % (i+1) % (j+1)).str() ) ;
+					callback( m_prefix + ":" + m_effect_parameter_names.covariance_name(i,j), "FLOAT" ) ;
 				}
 			}
 		}
-		callback( m_prefix + ":pvalue" ) ;
+		callback( m_prefix + ":pvalue", "FLOAT" ) ;
 	}
 
 	void operator()(
@@ -899,20 +947,21 @@ struct MultivariateFixedEffectMetaAnalysis: public bingwa::BingwaComputation {
 	#endif
 
 				for( std::size_t i = 0; i < numberOfEffects; ++i ) {
-					callback( m_prefix + ( boost::format( ":beta_%d" ) % (i+1)).str(), metaBeta(i) ) ;
+					// callback( m_prefix + ( boost::format( ":beta_%d" ) % (i+1)).str(), metaBeta(i) ) ;
+					callback( m_prefix + ":" + m_effect_parameter_names.parameter_name(i), metaBeta(i) ) ;
 				}
 				for( std::size_t i = 0; i < numberOfEffects; ++i ) {
-					callback( m_prefix + ( boost::format( ":se_%d" ) % (i+1)).str(), std::sqrt( metaVariance(i,i) ) ) ;
+					callback( m_prefix + ":" + m_effect_parameter_names.se_name(i), std::sqrt( metaVariance(i,i) ) ) ;
 				}
 				for( std::size_t i = 0; i < numberOfEffects; ++i ) {
 					callback(
-						m_prefix + ( boost::format( ":wald_pvalue_%d" ) % (i+1)).str(),
+						m_prefix + ":" + m_effect_parameter_names.wald_pvalue_name(i),
 						impl::compute_normal_pvalue( metaBeta(i), metaVariance(i,i), impl::eBoth )
 					) ;
 				}
 				for( std::size_t i = 0; i < (numberOfEffects-1); ++i ) {
 					for( std::size_t j = i+1; j < numberOfEffects; ++j ) {
-						callback( m_prefix + ( boost::format( ":cov_%d,%d" ) % (i+1) % (j+1)).str(), metaVariance(i,j) ) ;
+						callback( m_prefix + ":" + m_effect_parameter_names.covariance_name(i,j), metaVariance(i,j) ) ;
 					}
 				}
 				callback( m_prefix + ":pvalue", pvalue ) ;
@@ -1007,19 +1056,18 @@ public:
 		m_effect_parameter_names = names ;
 	}
 
-	void get_variables( boost::function< void ( std::string ) > callback ) const {
+	void get_variables( boost::function< void ( std::string, std::string ) > callback ) const {
 		for( std::size_t i = 0; i < m_models.size(); ++i ) {
-			callback( m_models[i].name() + ":bf" ) ;
-		}
-		for( std::size_t i = 0; i < m_models.size(); ++i ) {
-			callback( m_models[i].name() + ":weighted_bf" ) ;
+			callback( m_models[i].name() + ":bf", "FLOAT" ) ;
 		}
 		
-		callback( "mean_bf" ) ;
-		callback( "max_bf" ) ;
-		callback( "max_bf_model" ) ;
-		callback( "max_weighted_bf" ) ;
-		callback( "max_posterior_model" ) ;
+		callback( "mean_bf", "FLOAT" ) ;
+		callback( "max_bf_model", "TEXT" ) ;
+		callback( "max_bf", "FLOAT" ) ;
+		callback( "best_posterior_model", "TEXT" ) ;
+		callback( "best_posterior", "FLOAT" ) ;
+		callback( "2nd_best_posterior_model", "TEXT" ) ;
+		callback( "2nd_best_posterior", "FLOAT" ) ;
 	}
 
 	void operator()(
@@ -1053,8 +1101,9 @@ public:
 		double mean_bf = 0 ;
 		double max_bf = -Infinity ;
 		std::size_t max_bf_i = m_models.size() ;
-		double max_weighted_bf = -Infinity ;
-		std::size_t max_posterior_i = m_models.size() ;
+
+		std::vector< std::size_t > best_posterior_models( std::min( std::size_t(2), m_models.size() ), m_models.size() ) ;
+		std::vector< double > best_weighted_bfs( std::min( std::size_t(2), m_models.size() ), -Infinity ) ;
 
 		for( std::size_t i = 0; i < m_models.size(); ++i ) {
 			double model_bf = 0 ;
@@ -1080,11 +1129,27 @@ public:
 				max_bf_i = i ;
 			}
 
-			if( weighted_bf >= max_weighted_bf ) {
-				max_weighted_bf = weighted_bf ;
-				max_posterior_i = i ;
+			for( std::size_t j = 0; j < best_weighted_bfs.size(); ++j ) {
+				std::cerr << "weighted_bf = " << weighted_bf << ", best[0] = " << best_weighted_bfs[0] << ", best[1] = " << best_weighted_bfs[1] << ".\n" ;
+				if( weighted_bf > best_weighted_bfs[ j ]) {
+					std::rotate(
+						best_weighted_bfs.begin() + j,
+						best_weighted_bfs.begin() + best_weighted_bfs.size()-1,
+						best_weighted_bfs.end()
+					) ;
+					std::rotate(
+						best_posterior_models.begin() + j,
+						best_posterior_models.begin() + best_posterior_models.size() - 1,
+						best_posterior_models.end()
+					) ;
+					best_weighted_bfs[ j ] = weighted_bf ;
+					best_posterior_models[ j ] = i ;
+					break ;
+				}
 			}
 		}
+		
+		mean_bf /= total_weight ;
 
 		for( std::size_t i = 0; i < m_models.size(); ++i ) {
 			if( bfs[i] == bfs[i] ) {
@@ -1094,22 +1159,18 @@ public:
 			}
 		}
 
-		for( std::size_t i = 0; i < m_models.size(); ++i ) {
-			if( bfs[i] == bfs[i] ) {
-				callback( m_models[i].name() + ":weighted_bf", weighted_bfs[i] / total_weight ) ;
-			} else {
-				callback( m_models[i].name() + ":weighted_bf", genfile::MissingValue() ) ;
-			}
-		}
-		
 		callback( "mean_bf", mean_bf / total_weight ) ;
 		if( max_bf_i < m_models.size() ) {
 			callback( "max_bf", max_bf ) ;
 			callback( "max_bf_model", m_models[max_bf_i].name() ) ;
 		}
-		if( max_posterior_i < m_models.size() ) {
-			callback( "max_weighted_bf", weighted_bfs[ max_posterior_i ] / total_weight ) ;
-			callback( "max_posterior_model", m_models[ max_posterior_i ].name() ) ;
+		if( best_posterior_models[0] < m_models.size() ) {
+			callback( "best_posterior", (best_weighted_bfs[0] / total_weight) / mean_bf ) ;
+			callback( "best_posterior_model", m_models[ best_posterior_models[0] ].name() ) ;
+		}
+		if( best_posterior_models[1] < m_models.size() ) {
+			callback( "2nd_best_posterior", (best_weighted_bfs[1] / total_weight) / mean_bf ) ;
+			callback( "2nd_best_posterior_model", m_models[ best_posterior_models[1] ].name() ) ;
 		}
 	}
 
@@ -1120,6 +1181,9 @@ public:
 	std::string get_summary( std::string const& prefix = "", std::size_t column_width = 20 ) const {
 		return prefix + get_spec() ;
 	}
+	
+	std::vector< ModelSpec > const& get_models() const { return m_models ; }
+
 private:
 	std::string const m_name ;
 	std::string const m_prefix ;
@@ -1129,6 +1193,22 @@ private:
 
 	std::vector< ModelSpec > m_models ;
 } ;
+
+namespace impl {
+	std::string get_model_names(
+		std::vector< ModelAveragingBayesFactorAnalysis::ModelSpec > const& models,
+		std::size_t i
+	) {
+		return models[i].name() ;
+	}
+
+	double get_model_weights(
+		std::vector< ModelAveragingBayesFactorAnalysis::ModelSpec > const& models,
+		std::size_t i
+	) {
+		return models[i].weight() ;
+	}
+}
 
 struct PerCohortBayesFactor: public bingwa::BingwaComputation {
 public:
@@ -1148,12 +1228,12 @@ public:
 		m_effect_parameter_names = names ;
 	}
 	
-	void get_variables( boost::function< void ( std::string ) > callback ) const {
+	void get_variables( boost::function< void ( std::string, std::string ) > callback ) const {
 		using genfile::string_utils::to_string ;
 		
 		std::size_t const N = m_cohort_names.size() ;
 		for( std::size_t i = 0; i < N; ++i ) {
-			callback( m_cohort_names[ i ] + ":bf" ) ;
+			callback( m_cohort_names[ i ] + ":bf", "FLOAT" ) ;
 		}
 	}
 	
@@ -1245,102 +1325,6 @@ namespace bingwa {
 	}
 }
 
-struct ValueAccumulator: public bingwa::BingwaComputation {
-public:
-	typedef boost::shared_ptr< ValueAccumulator > SharedPtr ;
-	typedef std::auto_ptr< ValueAccumulator > UniquePtr ;
-public:
-	ValueAccumulator( std::string const& name ):
-		m_name( name ),
-		m_accumulation( 0 ),
-		m_accumulation_count( 0 )
-	{}
-
-	void set_weight( std::string const& model, double weight ) {
-		std::cerr << "Setting weight for model " << model << " to " << weight << ".\n" ;
-		m_weights[ model ] = weight ;
-	}
-	
-	void set_effect_parameter_names( bingwa::EffectParameterNamePack const& names ) {}
-
-	void get_variables( boost::function< void ( std::string ) > callback ) const {
-		callback( m_name ) ;
-	}
-
-	std::string get_summary( std::string const& prefix = "", std::size_t column_width = 20 ) const {
-		return prefix + get_spec()  ;
-	}
-	
-	std::string get_spec() const {
-		using genfile::string_utils::to_string ;
-		std::string result =  "ValueAccumulator(" + m_name + ") with weights: " ;
-		std::map< std::string, double >::const_iterator i = m_weights.begin() ;
-		std::map< std::string, double >::const_iterator const end_i = m_weights.end() ;
-		for( ; i != end_i; ++i ) {
-			result += i->first + "=" + to_string( i->second ) + "; " ;
-		}
-		return result ;
-	}
-	
-	void accumulate( std::string const& variable, genfile::VariantEntry const& value ) {
-	//	std::cerr << "ValueAccumulator: looking at variable " << variable << " with value " << value << ".\n"  ;
-		if( !value.is_missing() ) {
-			std::map< std::string, double >::const_iterator where = m_weights.find( variable ) ;
-			if( where != m_weights.end() ) {
-	//			std::cerr << "ValueAccumulator: found!\n" ;
-				m_accumulation += value.as< double >() * where->second ;
-				++m_accumulation_count ;
-			}
-		}
-	}
-
-	void operator()(
-		VariantIdentifyingData const& snp,
-		DataGetter const&,
-		ResultCallback callback
-	) {
-		if( m_accumulation_count > 0 ) {
-			callback( m_name, m_accumulation / m_accumulation_count ) ;
-		}
-		m_accumulation = 0 ;
-		m_accumulation_count = 0 ;
-	}
-	
-	
-	
-private:
-	std::string const m_name ;
-	std::map< std::string, double > m_weights ;
-	double m_accumulation ;
-	double m_accumulation_count ;
-} ;
-
-namespace impl {
-	void assign_counts( Eigen::MatrixXd* result, Eigen::MatrixXd::Index const col, genfile::VariantEntry const& AA, genfile::VariantEntry const& AB, genfile::VariantEntry const& BB, genfile::VariantEntry const& missing ) {
-		assert( result ) ;
-		assert( result->rows() >= 4 ) ;
-		assert( result->cols() > col ) ;
-		(*result)( 0, col ) = AA.is_missing() ? NA : AA.as< double >() ;
-		(*result)( 1, col ) = AB.is_missing() ? NA : AB.as< double >() ;
-		(*result)( 2, col ) = BB.is_missing() ? NA : BB.as< double >() ;
-		(*result)( 3, col ) = missing.is_missing() ? NA : missing.as< double >() ;
-	}
-	
-	void assign_vector_elt( Eigen::VectorXd* result, Eigen::VectorXd* non_missingness, Eigen::VectorXd::Index const elt, genfile::VariantEntry const& value ) {
-		assert( result ) ;
-		assert( non_missingness ) ;
-		assert( result->size() == non_missingness->size() ) ;
-		assert( result->size() > elt ) ;
-		if( value.is_missing() ) {
-			(*non_missingness)( elt ) = 0.0 ;
-			(*result)( elt ) = NA ;
-		}
-		else {
-			(*result)( elt ) = value.as< double >() ;
-		}
-	}
-}
-
 struct BingwaProcessor: public boost::noncopyable
 {
 public:
@@ -1411,7 +1395,7 @@ public:
 		ui_context.logger() << "================================================\n" ;
 	}
 	
-	void add_computation( std::string const& name, bingwa::BingwaComputation::UniquePtr computation ) {
+	void add_computation( std::string const& table, bingwa::BingwaComputation::UniquePtr computation ) {
 		m_computations.push_back( computation ) ;
 		m_computations.back().set_effect_parameter_names( m_effect_parameter_names ) ;
 	}
@@ -1428,7 +1412,7 @@ public:
 		return int( m_effect_parameter_names.size() ) ;
 	}
 
-	void get_variables( boost::function< void ( std::string const& ) > callback ) const {
+	void get_variables( boost::function< void ( std::string, std::string ) > callback ) const {
 		for( std::size_t i = 0; i < m_computations.size(); ++i ) {
 			m_computations[i].get_variables( callback ) ;
 		}
@@ -1459,6 +1443,7 @@ private:
 	boost::ptr_vector< FrequentistGenomeWideAssociationResults > m_cohorts ;
 	bingwa::EffectParameterNamePack m_effect_parameter_names ;
 	boost::ptr_vector< bingwa::BingwaComputation > m_computations ;
+	std::map< std::string, std::map< std::string, std::string > > m_table_specs ;
 	struct SnpMatch {
 	public:
 		SnpMatch( std::size_t index_, bool flip_ ): index( index_ ), flip( flip_ ) {}
@@ -1703,6 +1688,10 @@ public:
 			get_ui_context().logger() << "!! Error code is " << e.error_code() << ".\n" ;
 			throw appcontext::HaltProgramWithReturnCode( -1 ) ;
 		}
+		catch( appcontext::OptionProcessingException const& e ) {
+			get_ui_context().logger() << "!! Option error (" << e.what() << "): " << e.message() << ".\n" ;
+			throw appcontext::HaltProgramWithReturnCode( -1 ) ;
+		}
 	}
 
 	void unsafe_run() {
@@ -1712,26 +1701,32 @@ public:
 		m_processor->summarise( get_ui_context() ) ;
 		
 		qcdb::Storage::SharedPtr storage ;
-		if( options().check( "-flat-file" )) {
-			storage = qcdb::FlatFileOutputter::create_shared(
-				options().get< std::string >( "-o" ),
-				options().get< std::string >( "-analysis-name" ),
-				options().get_values_as_map()
-			) ;
-		}
-		else {
+		
+		if( impl::get_output_filetype( options().get< std::string >( "-o" )) == "sqlite" ) {
+			std::vector< std::string > elts = impl::parse_sqlite_filespec( options().get< std::string >( "-o" ) ) ;
+			assert( elts.size() > 0 ) ;
 			qcdb::FlatTableDBOutputter::SharedPtr table_storage = qcdb::FlatTableDBOutputter::create_shared(
-				options().get< std::string >( "-o" ),
+				elts[0],
 				options().get< std::string >( "-analysis-name" ),
 				options().get< std::string >( "-analysis-chunk" ),
 				options().get_values_as_map(),
 				options().get< std::string >( "-snp-match-fields" )
 			) ;
-
-			if( options().check( "-table-name" ) ) {
-				table_storage->set_table_name( options().get< std::string >( "-table-name" )) ;
+			
+			if( elts.size() < 2 ) {
+				elts.push_back( "Meta" ) ;
+			}
+			if( elts.size() < 3 ) {
+				elts.push_back( "Detail" ) ;
 			}
 			storage = table_storage ;
+			
+		} else {
+			storage = qcdb::FlatFileOutputter::create_shared(
+				options().get< std::string >( "-o" ),
+				options().get< std::string >( "-analysis-name" ),
+				options().get_values_as_map()
+			) ;
 		}
 
 		m_processor->send_results_to(
@@ -1761,11 +1756,13 @@ public:
 	
 
 		if( options().check( "-data" ) && options().get_values< std::string >( "-data" ).size() > 0 ) {
-			m_processor->add_computation(
-				"PerCohortValueReporter",
-				bingwa::BingwaComputation::create( "PerCohortValueReporter", cohort_names, options() )
-			) ;
-		
+			impl::VariableMap meta_variables ;
+			impl::VariableMap detail_variables ;
+			{
+				bingwa::BingwaComputation::UniquePtr computation = bingwa::BingwaComputation::create( "PerCohortValueReporter", cohort_names, options() ) ;
+				computation->get_variables( boost::bind( impl::insert_into_map< impl::VariableMap >, &detail_variables, _1, _2 ) ) ;
+				m_processor->add_computation( "PerCohortValueReporter", computation ) ;
+			}
 			if( options().check( "-no-meta-analysis" )) {
 				// No more computations.
 			}
@@ -1798,6 +1795,7 @@ public:
 							)
 						)
 					) ;
+					bf->get_variables( boost::bind( impl::insert_into_map< impl::VariableMap >, &meta_variables, _1, _2 ) ) ;
 					m_processor->add_computation(
 						"per-cohort",
 						bingwa::BingwaComputation::UniquePtr( bf.release() )
@@ -1808,7 +1806,9 @@ public:
 					MultivariateFixedEffectMetaAnalysis::UniquePtr computation(
 						new MultivariateFixedEffectMetaAnalysis( "FixedEffectMetaAnalysis" )
 					) ;
+					computation->set_effect_parameter_names( m_processor->get_effect_parameter_names() ) ;
 					computation->set_filter( filter ) ;
+					computation->get_variables( boost::bind( impl::insert_into_map< impl::VariableMap >, &meta_variables, _1, _2 ) ) ;
 					m_processor->add_computation(
 						"FixedEffectMetaAnalysis",
 						bingwa::BingwaComputation::UniquePtr( computation.release() )
@@ -1850,12 +1850,36 @@ public:
 						}
 						averager->set_filter( filter ) ;
 					
+						averager->get_variables(
+							boost::bind( impl::insert_into_map< impl::VariableMap >, &meta_variables, _1, _2 )
+						) ;
+					
+						storage->add_meta_table(
+							"Prior",
+							"default",
+							averager->get_models().size(),
+							boost::bind( &impl::get_model_names, averager->get_models(), _1 ),
+							boost::bind( &impl::get_model_weights, averager->get_models(), _1 )
+						) ;
+					
 						m_processor->add_computation(
 							"Average",
 							bingwa::BingwaComputation::UniquePtr( averager.release() )
 						) ;
 					}
 					summarise_priors( priors, prior_names, prior_weights, cohort_names ) ;
+				}
+				if( detail_variables.size() > 0 ) {
+					storage->add_table(
+						options().get_value( "-table-prefix" ) + "Detail",
+						boost::bind( &impl::contains_variable, detail_variables, _1 )
+					) ;
+				}
+				if( meta_variables.size() > 0 ) {
+					storage->add_table(
+						options().get_value( "-table-prefix" ) + "Meta",
+						boost::bind( &impl::contains_variable, meta_variables, _1 )
+					) ;
 				}
 			}
 		}
@@ -1864,7 +1888,7 @@ public:
 			boost::bind(
 				&qcdb::Storage::add_variable,
 				storage,
-				_1
+				_1, _2
 			)
 		) ;
 		
@@ -1915,17 +1939,12 @@ public:
 		for( std::size_t i = 0; i < model_specs.size(); ++i ) {
 			std::string model_name ;
 			std::string model_spec ;
-			bool use_generated_name = false ;
 			{
 				std::size_t const colon_pos = model_specs[i].find( ':' ) ;
+				assert( colon_pos != std::string::npos ) ;
 				if( colon_pos != std::string::npos ) {
-					use_generated_name = false ;
 					model_name = model_specs[i].substr( 0, colon_pos ) ;
 					model_spec = model_specs[i].substr( colon_pos + 1, model_specs[i].size() ) ;
-				} else {
-					use_generated_name = true ;
-					model_name = "" ;
-					model_spec = model_specs[i] ;
 				}
 			}
 			std::vector< CovarianceSpec > const covariance_specs = parse_covariance_spec( model_spec, m_value_sets ) ;
@@ -1934,29 +1953,90 @@ public:
 			std::cerr << "get_simple_priors(): for model " << model_spec << ", got " << covariance_specs.size() << " specs.\n" ;
 #endif
 
+			std::vector< uint32_t > cohort_masks ;
+			if( options().check( "-subsets" )) {
+				cohort_masks = compute_cohort_masks( number_of_cohorts, options().get< std::string >( "-subsets" )) ;
+			}
+
 			for( std::size_t j = 0; j < covariance_specs.size(); ++j ) {
 				CovarianceSpec const& covariance_spec = covariance_specs[j] ;
 				if( covariance_spec.get< eBetweenPopulationCorrelation >().size() > 0 ) {
-					get_uniform_population_prior(
-						number_of_cohorts,
-						model_specs[ i ],
-						covariance_spec,
-						model_name,
-						result,
-						use_generated_name
-					) ;
+					if( cohort_masks.size() > 0 ) {
+						for( std::size_t mask_i = 0; mask_i < cohort_masks.size(); ++mask_i ) {
+							uint32_t const& mask = cohort_masks[mask_i] ;
+							std::string const mask_name = stringify_mask( number_of_cohorts, mask ) ;
+							get_uniform_population_prior(
+								number_of_cohorts,
+								model_specs[ i ],
+								covariance_spec,
+								model_name + ":" + mask_name,
+								result,
+								mask
+							) ;
+						}
+					} else {
+						get_uniform_population_prior(
+							number_of_cohorts,
+							model_specs[ i ],
+							covariance_spec,
+							model_name,
+							result,
+							uint32_t( 0xFFFFFFFFFFFFFFFF ) >> (32-number_of_cohorts)
+						) ;
+					}
 				} else {
 					get_all_population_prior(
 						number_of_cohorts,
 						model_specs[ i ],
 						covariance_spec,
 						model_name,
-						result,
-						use_generated_name
+						result
 					) ;
 				}
 			}
 		}
+	}
+
+	std::vector< uint32_t > compute_cohort_masks( std::size_t const number_of_cohorts, std::string const& type ) const {
+		assert( number_of_cohorts <= 16 ) ;
+		assert( type == "all" || type == "contiguous" ) ;
+		if( type == "all" ) {
+			return compute_all_subset_masks( number_of_cohorts ) ;
+		} else if( type == "contiguous" ) {
+			return compute_contiguous_subset_masks( number_of_cohorts ) ;
+		}
+	}
+
+	std::string stringify_mask( std::size_t const number_of_cohorts, uint32_t mask ) const {
+		std::string result( number_of_cohorts, ' ' ) ;
+		for( std::size_t bit = 0; bit < number_of_cohorts; ++bit ) {
+			result[bit] = (( mask >> bit ) & 0x1 ) ? '1' : '0' ;
+		}
+		return result ;
+	}
+
+	std::vector< uint32_t > compute_all_subset_masks( std::size_t const number_of_cohorts ) const {
+		std::vector< uint32_t > result ;
+		uint32_t const max = uint32_t( 0xFFFFFFFF ) >> (32-number_of_cohorts) ;
+		std::string maskStr( number_of_cohorts, '.' ) ;
+		for( uint32_t mask = 0x1 ; mask <= max; ++mask ) {
+			result.push_back( mask ) ;
+		}
+		return result ;
+	}
+
+	std::vector< uint32_t > compute_contiguous_subset_masks( std::size_t const number_of_cohorts ) const {
+		std::vector< uint32_t > result ;
+		uint32_t const max = uint32_t( 0xFFFFFFFF ) >> (32-number_of_cohorts) ;
+
+		std::string maskStr( number_of_cohorts, '.' ) ;
+		for( std::size_t nBits = 1; nBits <= number_of_cohorts; ++nBits ) {
+			for( std::size_t pos = 0; pos <= number_of_cohorts-nBits; ++pos ) {
+				uint32_t mask = (uint32_t( 0xFFFFFFFFFFFFFFFF ) >> (32 - nBits)) << pos ;
+				result.push_back( mask ) ;
+			}
+		}
+		return result ;
 	}
 
 	std::string format_covariance_spec( CovarianceSpec const& covariance_spec ) const {
@@ -2002,13 +2082,14 @@ public:
 		CovarianceSpec const& covariance_spec,
 		std::string model_name,
 		Priors* result,
-		bool const use_generated_name
+		uint32_t const cohort_mask
 	) const {
 		using namespace genfile::string_utils ;
-		
 #if DEBUG_BINGWA
 		std::cerr << format_covariance_spec( covariance_spec ) ;
 #endif
+
+		assert( cohort_mask <= uint32_t( 0xFFFFFFFFFFFFFFFF ) >> (32-number_of_cohorts) ) ;
 
 		try {
 			if( covariance_spec.get<eBetweenPopulationCorrelation>().size() != 1 ) {
@@ -2073,12 +2154,15 @@ public:
 				for( int block_i = 0; block_i < D; ++block_i ) {
 					sd_matrix.segment( block_i * N, N ).setConstant( parse_sd( covariance_spec.get<eSD>()[block_i] ) ) ;
 				}
-				Eigen::MatrixXd const covariance = sd_matrix.asDiagonal() * correlation * sd_matrix.asDiagonal() ;
-
-				if( use_generated_name ) {
-					model_name = "tau=" + join( covariance_spec.get<eBetweenPopulationCorrelation>(), "," ) ;
-					model_name += "/sd=" + join( covariance_spec.get<eSD>(), "," ) + "/cor=" + join( covariance_spec.get<eCorrelation>(), "," ) ;
+				// Deal with masked populations here.
+				for( int population_i = 0; population_i < N; ++population_i ) {
+					if( ((cohort_mask >> population_i) & 0x1 ) == 0 ) {
+						for( int block_i = 0; block_i < D; ++block_i ) {
+							sd_matrix( block_i*N + population_i ) = 0 ;
+						}
+					}
 				}
+				Eigen::MatrixXd const covariance = sd_matrix.asDiagonal() * correlation * sd_matrix.asDiagonal() ;
 
 				result->insert( std::make_pair( model_name, std::make_pair( covariance_spec, covariance ) )) ;
 				
@@ -2103,8 +2187,7 @@ public:
 		std::string const& model_spec,
 		CovarianceSpec const& covariance_spec,
 		std::string model_name,
-		Priors* result,
-		bool const use_generated_name
+		Priors* result
 	) const {
 		using namespace genfile::string_utils ;
 
@@ -2165,10 +2248,6 @@ public:
 				}
 
 				Eigen::MatrixXd const covariance = sd_vector.asDiagonal() * correlation * sd_vector.asDiagonal() ;
-
-				if( use_generated_name ) {
-					model_name += "sd=" + join( covariance_spec.get<eSD>(), "," ) + "/cor=" + join( covariance_spec.get<eCorrelation>(), "," ) ;
-				}
 
 				result->insert( std::make_pair( model_name, std::make_pair( covariance_spec, covariance ) ) ) ;
 				
@@ -2539,6 +2618,10 @@ public:
 				) ;
 			}
 		}
+		if( options.check( "-subset-prior" )) {
+			
+		}
+		
 
 		return result ;
 	}
@@ -2780,7 +2863,8 @@ public:
 			name_i = prior_names.begin(),
 			end_name_i = prior_names.end() ;
 
-		for( ; name_i != end_name_i; ++name_i ) {
+		
+		for( std::size_t model_count = 0, submodel_count = 0; name_i != end_name_i; ++name_i, ++model_count ) {
 			get_ui_context().logger() << "Model " << *name_i ;
 			{
 				PriorWeights::const_iterator where = prior_weights.find( *name_i ) ;
@@ -2825,6 +2909,16 @@ public:
 					get_ui_context().logger() << "\n" ;
 				}
 				get_ui_context().logger() << "\n";
+				
+				if( !options().check( "-verbose" ) ) {
+					get_ui_context().logger() << "-- ...(+" << (prior.rows()-1) << " other submodels, use -verbose to output these too)\n\n" ;
+					break ;
+				}
+			}
+			
+			if( (!options().check( "-verbose" )) && model_count > 10 ) {
+				get_ui_context().logger() << "...(+" << (prior_names.size()-model_count) << " other models, use -verbose to output these too.\n" ;
+				break ;
 			}
 		}
 

@@ -192,7 +192,6 @@ namespace genfile {
 		}
 		
 		uint16_t encode_call( int64_t const value, uint32_t const bitsPerAllele ) {
-			uint16_t const bitMask = uint16_t( 0xFFFF ) >> ( 16 - bitsPerAllele ) ;
 			std::size_t const numberOfAlleles = 16 / bitsPerAllele ;
 			assert( value <= numberOfAlleles ) ;
 			return(( value == 0 ) ? uint16_t(0) : (1 << ((value-1)*bitsPerAllele))) ;

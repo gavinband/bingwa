@@ -43,15 +43,23 @@ namespace bingwa {
 		return m_betas.size() ;
 	}
 
-	std::string const& EffectParameterNamePack::parameter_name( std::size_t i ) const {
+	std::string EffectParameterNamePack::parameter_name( std::size_t i ) const {
 		return m_betas[i] ;
 	}
 
-	std::string const& EffectParameterNamePack::se_name( std::size_t i ) const {
+	std::string EffectParameterNamePack::se_name( std::size_t i ) const {
 		return m_ses[i] ;
 	}
 
-	std::string const& EffectParameterNamePack::covariance_name( std::size_t i, std::size_t j ) const {
+	std::string EffectParameterNamePack::wald_pvalue_name( std::size_t i ) const {
+		std::string result = m_ses[i] ;
+		std::size_t pos = result.find( "se_" ) ;
+		assert( pos != std::string::npos ) ;
+		result.replace( pos, 3, "wald_pvalue_" ) ;
+		return result ;
+	}
+
+	std::string EffectParameterNamePack::covariance_name( std::size_t i, std::size_t j ) const {
 		assert( j > i ) ;
 		// index in cov skips the lower diagonal.
 		// Lower diagonal has ((i+1)*(i+2)/2) entries since i is a 0-based index.

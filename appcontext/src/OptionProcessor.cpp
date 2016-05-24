@@ -348,8 +348,12 @@ namespace appcontext {
 	std::string OptionProcessor::get_default_value( std::string const& arg ) const {
 		std::map< std::string, OptionDefinition >::const_iterator defn_i
 			= m_option_definitions.find( arg ) ;
-		assert( defn_i != m_option_definitions.end() ) ;
-		assert( defn_i->second.has_default_value() ) ;
+		if( defn_i == m_option_definitions.end() ) {
+			throw OptionProcessingException( arg, "Option name \"" + arg + "\" was not recognised." ) ;
+		}
+		if( !defn_i->second.has_default_value() ) {
+			throw OptionProcessingException( arg, "Option name \"" + arg + "\" has no default." ) ;
+		}
 		return defn_i->second.default_value() ;
 	}
 

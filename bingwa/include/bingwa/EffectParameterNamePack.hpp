@@ -24,9 +24,10 @@ namespace bingwa {
 		EffectParameterNamePack& operator=( EffectParameterNamePack const& other ) ;
 
 		std::size_t size() const ;
-		std::string const& parameter_name( std::size_t i ) const ;
-		std::string const& se_name( std::size_t i ) const ;
-		std::string const& covariance_name( std::size_t i, std::size_t j ) const ;
+		std::string parameter_name( std::size_t i ) const ;
+		std::string se_name( std::size_t i ) const ;
+		std::string wald_pvalue_name( std::size_t i ) const ;
+		std::string covariance_name( std::size_t i, std::size_t j ) const ;
 	
 		bool operator==( EffectParameterNamePack const& other ) const ;
 		bool operator!=( EffectParameterNamePack const& other ) const ;

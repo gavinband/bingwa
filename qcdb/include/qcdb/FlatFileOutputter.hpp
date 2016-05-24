@@ -28,7 +28,15 @@ namespace qcdb {
 		FlatFileOutputter( std::string const& filename, std::string const& analysis_name, Metadata const& metadata ) ;
 		~FlatFileOutputter() ;
 
-		void add_variable( std::string const& ) ;
+		void add_table( std::string const&, boost::function< bool( std::string const& ) > ) ;
+		void add_meta_table(
+			std::string const& tableName,
+			std::string const& rowName,
+			std::size_t number_of_columns,
+			boost::function< std::string ( std::size_t ) > getColumnName,
+			boost::function< genfile::VariantEntry( std::size_t ) > getColumnValue
+		) ;
+		void add_variable( std::string const& variable, std::string const& type ) ;
 
 		void create_new_variant( genfile::VariantIdentifyingData const& ) ;
 		void store_per_variant_data(
@@ -44,6 +52,7 @@ namespace qcdb {
 		std::string const m_filename ;
 		std::string const m_analysis_name ;
 		Metadata const m_metadata ;
+		std::vector< std::string > m_metatables ;
 		std::size_t const m_max_snps_per_block ;
 		statfile::BuiltInTypeStatSink::UniquePtr m_sink ;
 		std::vector< genfile::VariantIdentifyingData > m_snps ;
