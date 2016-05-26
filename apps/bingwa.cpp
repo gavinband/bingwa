@@ -623,6 +623,14 @@ namespace impl {
 		bool result = (map.find( variable ) != map.end() ) ;
 		return result ;
 	}
+	
+	std::string to_01_string( Eigen::VectorXd const v ) {
+		std::string result( v.size(), ' ' ) ;
+		for( int i = 0; i < v.size(); ++i ) {
+			result[i] = ( v(i) != 0.0 ) ? '1' : '0' ;
+		}
+		return result ;
+	}
 }
 
 
@@ -877,6 +885,7 @@ struct MultivariateFixedEffectMetaAnalysis: public bingwa::BingwaComputation {
 
 	void get_variables( boost::function< void ( std::string, std::string ) > callback ) const {
 		std::size_t const numberOfEffects = m_effect_parameter_names.size() ;
+		callback( m_prefix + ":included_cohorts", "TEXT" ) ;
 		if( numberOfEffects > 0 ) {
 			for( std::size_t i = 0; i < numberOfEffects; ++i ) {
 				//callback( m_prefix + ( boost::format( ":beta_%d" ) % (i+1)).str(), "FLOAT" ) ;
@@ -915,6 +924,8 @@ struct MultivariateFixedEffectMetaAnalysis: public bingwa::BingwaComputation {
 			impl::get_betas_and_covariance_per_cohort( data_getter, m_filter, betas, covariance, non_missingness, numberOfEffects, impl::eByCohort )
 			&& non_missingness.sum() > 0
 		) {
+			callback( m_prefix + ":included_cohorts", impl::to_01_string( non_missingness ) ) ;
+			
 			Eigen::MatrixXd nonmissingness_selector = impl::get_nonmissing_cohort_selector( non_missingness, data_getter.get_number_of_cohorts(), numberOfEffects ) ;
 #if DEBUG_BINGWA
 			std::cerr << "MultivariateFixedEffectMetaAnalysis::operator(): looking at variant: " << snp << "\n" ;
