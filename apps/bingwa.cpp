@@ -885,7 +885,7 @@ struct MultivariateFixedEffectMetaAnalysis: public bingwa::BingwaComputation {
 
 	void get_variables( boost::function< void ( std::string, std::string ) > callback ) const {
 		std::size_t const numberOfEffects = m_effect_parameter_names.size() ;
-		callback( m_prefix + ":included_cohorts", "TEXT" ) ;
+		callback( m_prefix + ":included_betas", "TEXT" ) ;
 		if( numberOfEffects > 0 ) {
 			for( std::size_t i = 0; i < numberOfEffects; ++i ) {
 				//callback( m_prefix + ( boost::format( ":beta_%d" ) % (i+1)).str(), "FLOAT" ) ;
