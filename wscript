@@ -5,7 +5,7 @@ import Options
 
 srcdir="."
 APPNAME = "bingwa"
-VERSION = "2.0-dev"
+VERSION = "0.9-dev"
 
 subdirs = [
 	'genfile', 'statfile', 'appcontext',
