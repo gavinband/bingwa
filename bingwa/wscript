@@ -1,0 +1,21 @@
+import os.path
+import glob
+#import UnitTest
+
+def configure( conf ):
+	pass
+
+def build( bld ):
+	import Options
+	
+	#---------------------
+	# libs
+	#---------------------
+	bld(
+		features = 'cxx cstaticlib',
+		target = 'bingwa-lib',
+		source = bld.glob( 'src/*.cpp' ),
+		includes = 'include/',
+		export_incdirs = 'include',
+		uselib_local = 'boost appcontext statfile genfile'
+	)
