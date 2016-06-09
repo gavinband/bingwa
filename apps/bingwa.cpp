@@ -924,7 +924,7 @@ struct MultivariateFixedEffectMetaAnalysis: public bingwa::BingwaComputation {
 			impl::get_betas_and_covariance_per_cohort( data_getter, m_filter, betas, covariance, non_missingness, numberOfEffects, impl::eByCohort )
 			&& non_missingness.sum() > 0
 		) {
-			callback( m_prefix + ":included_cohorts", impl::to_01_string( non_missingness ) ) ;
+			callback( m_prefix + ":included_betas", impl::to_01_string( non_missingness ) ) ;
 			
 			Eigen::MatrixXd nonmissingness_selector = impl::get_nonmissing_cohort_selector( non_missingness, data_getter.get_number_of_cohorts(), numberOfEffects ) ;
 #if DEBUG_BINGWA
@@ -1141,7 +1141,7 @@ public:
 			}
 
 			for( std::size_t j = 0; j < best_weighted_bfs.size(); ++j ) {
-				std::cerr << "weighted_bf = " << weighted_bf << ", best[0] = " << best_weighted_bfs[0] << ", best[1] = " << best_weighted_bfs[1] << ".\n" ;
+				// std::cerr << "weighted_bf = " << weighted_bf << ", best[0] = " << best_weighted_bfs[0] << ", best[1] = " << best_weighted_bfs[1] << ".\n" ;
 				if( weighted_bf > best_weighted_bfs[ j ]) {
 					std::rotate(
 						best_weighted_bfs.begin() + j,
@@ -1771,6 +1771,7 @@ public:
 			impl::VariableMap detail_variables ;
 			{
 				bingwa::BingwaComputation::UniquePtr computation = bingwa::BingwaComputation::create( "PerCohortValueReporter", cohort_names, options() ) ;
+				computation->set_effect_parameter_names( m_processor->get_effect_parameter_names() ) ;
 				computation->get_variables( boost::bind( impl::insert_into_map< impl::VariableMap >, &detail_variables, _1, _2 ) ) ;
 				m_processor->add_computation( "PerCohortValueReporter", computation ) ;
 			}
@@ -1866,7 +1867,7 @@ public:
 						) ;
 					
 						storage->add_meta_table(
-							"Prior",
+							options().get_value( "-table-prefix" ) + "Prior",
 							"default",
 							averager->get_models().size(),
 							boost::bind( &impl::get_model_names, averager->get_models(), _1 ),
