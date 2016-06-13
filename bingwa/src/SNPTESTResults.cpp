@@ -261,7 +261,17 @@ namespace bingwa {
 				m_betas( snp_index, i ) = ( value == "NA" ? NA: to_repr< double >( value ) ) ;
 				matched = true ;
 			} else if( variable == m_se_columns[i] ) {
-				m_ses( snp_index, i ) = ( value == "NA" ? NA: to_repr< double >( value ) ) ;
+				if( value == "NA" ) {
+					m_ses( snp_index, i ) = NA ;
+				} else {
+					double se = to_repr< double >( value ) ;
+					// To avoid issues with non-negative definite matrices,
+					// we need to ensure covariance is not larger than possible given sds.
+					// In practice the sds we read here are rounded.  We assume they are accurate to 6dps
+					// and act conservatively by adding a small epsilon to each sd.
+					double const epsilon = 5 * std::pow(10,(std::log10(se)-7)) ;
+					m_ses( snp_index, i ) = se + epsilon ;
+				}	
 				matched = true ;
 			}
 		}

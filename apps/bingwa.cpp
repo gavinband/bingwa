@@ -28,6 +28,7 @@
 #include <Eigen/Core>
 #include <Eigen/Cholesky>
 #include <Eigen/LU>
+#include <Eigen/QR>
 #include "appcontext/CmdLineOptionProcessor.hpp"
 #include "appcontext/ApplicationContext.hpp"
 #include "appcontext/get_current_time_as_string.hpp"
@@ -682,23 +683,43 @@ namespace impl {
 		 std::cerr << "impl::compute_bayes_factor()\n" ;
 		 std::cerr << std::resetiosflags( std::ios::floatfield ) ;
 		 std::cerr << "prior = " << prior << ".\n" ;
-		 std::cerr << "betas = " << betas.transpose() << ".\n" ;
 		 std::cerr << "V = " << V << ".\n" ;
+		std::cerr << "V plus prior = " << (V+prior) << "\n" ;
 	#endif
 		// I hope LDLT copes with noninvertible matrices.
 		// Maybe it doesn't...but let's find out.
 		Eigen::LDLT< Eigen::MatrixXd > Vsolver( V ) ;
 		Eigen::LDLT< Eigen::MatrixXd > V_plus_prior_solver( V + prior ) ;
-		Eigen::VectorXd exponent = betas.transpose() * ( Vsolver.solve( betas ) - V_plus_prior_solver.solve( betas ) ) ;
-	
-		assert( exponent.size() == 1 ) ;
-	
-		double const constant = std::sqrt( Vsolver.vectorD().prod() / V_plus_prior_solver.vectorD().prod() ) ;
-		double const result = constant * std::exp( 0.5 * exponent(0) ) ;
+		//Eigen::ColPivHouseholderQR< Eigen::MatrixXd > Vsolver( V ) ;
+		//Eigen::ColPivHouseholderQR< Eigen::MatrixXd > V_plus_prior_solver( V+prior ) ;
+		//Eigen::FullPivLU< Eigen::MatrixXd > V_plus_prior_solver( V + prior ) ;
+		Eigen::VectorXd const exponent = betas.transpose() * ( Vsolver.solve( betas ) - V_plus_prior_solver.solve( betas ) ) ;
+		double const detV = Vsolver.vectorD().prod() ;
+		double const detV_plus_prior = V_plus_prior_solver.vectorD().prod() ;
+		double const constant = std::sqrt( detV / detV_plus_prior ) ;
 
 	#if DEBUG_BINGWA
+		std::cerr << std::setprecision(15) ;
+		std::cerr << "betas = " << betas.transpose() << ".\n" ;
+		std::cerr << "V-solved betas = " << Vsolver.solve( betas ).transpose() << ".\n" ;
+		std::cerr << "V+prior-solved betas = " << V_plus_prior_solver.solve( betas ).transpose() << ".\n" ;
+		//std::cerr << "log determinant(V) = " << Vsolver.logAbsDeterminant() << "\n" ;
+		//std::cerr << "log determinant(V+prior) = " << V_plus_prior_solver.logAbsDeterminant() << "\n" ;
+		std::cerr << "determinant(V) = " << Vsolver.vectorD().prod() << " or " << V.determinant() << "\n" ;
+		std::cerr << "determinant(V+prior) = " << V_plus_prior_solver.vectorD().prod() << " or " << (V+prior).determinant() << "\n" ;
+		std::cerr << "Vsolver: " << ((Vsolver.info() == Eigen::Success) ? "success" : "fail" ) << ".\n" ;
+		std::cerr << "Vppsolver: " << ((V_plus_prior_solver.info() == Eigen::Success) ? "success" : "fail" ) << ".\n" ;
 		std::cerr << "constant = " << constant << ".\n" ;
 		std::cerr << "exponent= " << exponent.transpose() << ".\n" ;
+	#endif
+		//double const constant = std::sqrt( std::exp( Vsolver.logAbsDeterminant() - V_plus_prior_solver.logAbsDeterminant() )) ;
+		double const result = (
+				( Vsolver.info() != Eigen::Success || Vsolver.isNegative() || detV < 0.0 ||	V_plus_prior_solver.info() != Eigen::Success || V_plus_prior_solver.isNegative() || detV_plus_prior < 0.0 )
+			)
+			? NA
+			: constant * std::exp( 0.5 * exponent(0) ) ;
+
+	#if DEBUG_BINGWA
 		std::cerr << "BF = " << result << ".\n" ;
 	#endif
 		return result ;
