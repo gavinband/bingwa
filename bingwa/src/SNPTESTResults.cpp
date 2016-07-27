@@ -268,8 +268,8 @@ namespace bingwa {
 					// To avoid issues with non-negative definite matrices,
 					// we need to ensure covariance is not larger than possible given sds.
 					// In practice the sds we read here are rounded.  We assume they are accurate to 6dps
-					// and act conservatively by adding a small epsilon to each sd.
-					double const epsilon = 5 * std::pow(10,(std::log10(se)-7)) ;
+					// and act conservatively by adding a small epsilon to each sd in the 5th significant digit.
+					double const epsilon = 5 * std::pow(10,(std::log10(std::ceil(se))-5)) ;
 					m_ses( snp_index, i ) = se + epsilon ;
 				}	
 				matched = true ;

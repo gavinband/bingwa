@@ -12,6 +12,7 @@
 #include <map>
 #include <algorithm>
 #include <utility>
+#include <fstream>
 #include <boost/bimap.hpp>
 #include <boost/bind.hpp>
 #include <boost/signals2/signal.hpp>
@@ -23,6 +24,7 @@
 #include <boost/tuple/tuple_comparison.hpp>
 #include <boost/foreach.hpp>
 #include <boost/regex.hpp>
+#include <boost/filesystem.hpp>
 #include <boost/math/distributions/normal.hpp>
 #include <boost/math/distributions/chi_squared.hpp>
 #include <Eigen/Core>
@@ -254,6 +256,11 @@ struct BingwaOptions: public appcontext::CmdLineOptionProcessor {
 		}
 		{
 			options.declare_group( "Bayesian analysis options" ) ;
+			options[ "-null-sd" ]
+				.set_description( "Define the standard deviation of the prior for null model." )
+				.set_takes_single_value()
+				.set_default_value( 0 )
+			;
 			options[ "-define-sd-set" ]
 				.set_description( "Define set(s) of standard deviations to use in prior specifications. "
 					"The value should be a whitespace-separated list of elements of the form "
@@ -501,9 +508,9 @@ namespace impl {
 			if( this_betas.sum() == this_betas.sum() && this_covariance.sum() == this_covariance.sum() ) {
 				betas = this_betas ;
 				int covariance_i = 0 ;
-				for( std::size_t i = 0; i < numberOfEffects; ++i ) {
+				for( std::size_t i = 0; i < std::size_t( numberOfEffects ); ++i ) {
 					covariance( i, i ) = this_ses(i) * this_ses(i) ;
-					for( std::size_t j = i+1; j < numberOfEffects; ++j ) {
+					for( std::size_t j = i+1; j < std::size_t( numberOfEffects ); ++j ) {
 						covariance( j, i ) = covariance( i, j ) = this_covariance( covariance_i++ );
 					}
 				}
@@ -678,17 +685,17 @@ namespace impl {
 		return( constant * exp( exponent ))
 	}
 */
-	double compute_bayes_factor( Eigen::MatrixXd const& prior, Eigen::MatrixXd const& V, Eigen::VectorXd const& betas ) {
+	double compute_bayes_factor( Eigen::MatrixXd const& prior, Eigen::MatrixXd const& null_prior, Eigen::MatrixXd const& V, Eigen::VectorXd const& betas ) {
 	#if DEBUG_BINGWA
 		 std::cerr << "impl::compute_bayes_factor()\n" ;
 		 std::cerr << std::resetiosflags( std::ios::floatfield ) ;
 		 std::cerr << "prior = " << prior << ".\n" ;
+		 std::cerr << "null prior = " << null_prior << ".\n" ;
 		 std::cerr << "V = " << V << ".\n" ;
-		std::cerr << "V plus prior = " << (V+prior) << "\n" ;
 	#endif
 		// I hope LDLT copes with noninvertible matrices.
 		// Maybe it doesn't...but let's find out.
-		Eigen::LDLT< Eigen::MatrixXd > Vsolver( V ) ;
+		Eigen::LDLT< Eigen::MatrixXd > Vsolver( V + null_prior ) ;
 		Eigen::LDLT< Eigen::MatrixXd > V_plus_prior_solver( V + prior ) ;
 		//Eigen::ColPivHouseholderQR< Eigen::MatrixXd > Vsolver( V ) ;
 		//Eigen::ColPivHouseholderQR< Eigen::MatrixXd > V_plus_prior_solver( V+prior ) ;
@@ -1071,7 +1078,8 @@ public:
 	
 public:
 	ModelAveragingBayesFactorAnalysis():
-		m_prefix( "ModelAveragingBayesFactorAnalysis" )
+		m_prefix( "ModelAveragingBayesFactorAnalysis" ),
+		m_null_sd( 0.0 )
 	{}
 
 	~ModelAveragingBayesFactorAnalysis() {}
@@ -1082,6 +1090,11 @@ public:
 
 	void set_filter( Filter filter ) {
 		m_filter = filter ;
+	}
+
+	void set_null_sd( double sd ) {
+		assert( sd >= 0.0 ) ;
+		m_null_sd = sd ;
 	}
 
 	void set_effect_parameter_names( bingwa::EffectParameterNamePack const& names ) {
@@ -1126,7 +1139,9 @@ public:
 		Eigen::MatrixXd const nonmissingness_selector = impl::get_nonmissing_coefficient_selector( non_missingness ) ;
 		betas = nonmissingness_selector * betas ;
 		covariance = nonmissingness_selector * covariance * nonmissingness_selector.transpose() ;
-		
+
+		Eigen::MatrixXd const null_prior = Eigen::MatrixXd::Identity( covariance.rows(), covariance.cols() ) * ( m_null_sd * m_null_sd ) ;
+
 		std::vector< double > bfs( m_models.size(), NA ) ;
 		std::vector< double > weighted_bfs( m_models.size(), NA ) ;
 		double total_weight = 0 ;
@@ -1141,7 +1156,7 @@ public:
 			double model_bf = 0 ;
 			for( std::size_t j = 0; j < m_models[i].size(); ++j ) {
 				Eigen::MatrixXd const prior = nonmissingness_selector * m_models[i].covariance(j) * nonmissingness_selector.transpose() ;
-				double bf = impl::compute_bayes_factor( prior, covariance, betas ) ;
+				double bf = impl::compute_bayes_factor( prior, null_prior, covariance, betas ) ;
 				if( bf != bf ) {
 					bf = 1 ;
 				}
@@ -1219,6 +1234,7 @@ public:
 private:
 	std::string const m_name ;
 	std::string const m_prefix ;
+	double m_null_sd ;
 	Eigen::MatrixXd const m_sigma ;
 	Filter m_filter ;
 	bingwa::EffectParameterNamePack m_effect_parameter_names ;
@@ -1249,7 +1265,8 @@ public:
 public:
 	PerCohortBayesFactor( std::vector< std::string > const& cohort_names, ModelSpec const& model ):
 		m_cohort_names( cohort_names ),
-		m_model( model )
+		m_model( model ),
+		m_null_sd( 0.0 )
 	{}
 	
 	void add_variable( std::string const& variable ) {
@@ -1281,6 +1298,7 @@ public:
 		Eigen::VectorXd betas ;
 		Eigen::MatrixXd covariance ;
 		Eigen::VectorXd non_missingness ;
+		Eigen::MatrixXd const null_prior = Eigen::MatrixXd::Identity( m_effect_parameter_names.size(), m_effect_parameter_names.size() ) * (m_null_sd * m_null_sd) ;
 		for( std::size_t i = 0; i < N; ++i ) {
 			bool const obtained = (
 				impl::get_betas_and_covariance_for_cohort(
@@ -1299,15 +1317,15 @@ public:
 			}
 			else {
 				double mean_bf = 0.0 ;
-				for( std::size_t i = 0; i < m_model.size(); ++i ) {
-					Eigen::MatrixXd const prior = m_model.covariance(i) ;
+				for( std::size_t model_i = 0; model_i < m_model.size(); ++model_i ) {
+					Eigen::MatrixXd const prior = m_model.covariance(model_i) ;
 #if DEBUG_BINGWA
 					std::cerr << "PRIOR = \n" << prior << ".\n" ;
 					std::cerr << "BETAs = \n" << betas.transpose() << ".\n" ;
 					std::cerr << "NONMISSINGNESS = \n" << non_missingness << ".\n" ;
 					std::cerr << "COV = \n" << covariance << ".\n" ;
 #endif
-					double bf = impl::compute_bayes_factor( prior, covariance, betas ) ;
+					double bf = impl::compute_bayes_factor( prior, null_prior, covariance, betas ) ;
 					if( bf != bf ) {
 						bf = 1 ;
 					}
@@ -1332,6 +1350,7 @@ public:
 		std::set< std::string > m_extra_variables ;
 		bingwa::EffectParameterNamePack m_effect_parameter_names ;
 		ModelSpec m_model ;
+		double m_null_sd ;
 } ;
 
 
@@ -2037,6 +2056,8 @@ public:
 			return compute_all_subset_masks( number_of_cohorts ) ;
 		} else if( type == "contiguous" ) {
 			return compute_contiguous_subset_masks( number_of_cohorts ) ;
+		} else {
+			assert(0) ;
 		}
 	}
 
@@ -2060,8 +2081,6 @@ public:
 
 	std::vector< uint32_t > compute_contiguous_subset_masks( std::size_t const number_of_cohorts ) const {
 		std::vector< uint32_t > result ;
-		uint32_t const max = uint32_t( 0xFFFFFFFF ) >> (32-number_of_cohorts) ;
-
 		std::string maskStr( number_of_cohorts, '.' ) ;
 		for( std::size_t nBits = 1; nBits <= number_of_cohorts; ++nBits ) {
 			for( std::size_t pos = 0; pos <= number_of_cohorts-nBits; ++pos ) {
@@ -2819,32 +2838,41 @@ public:
 				}
 			}
 
-			std::vector< std::string > const weight_spec = options.get_values< std::string >( "-prior-weights" ) ;
-			for( std::size_t i = 0; i < weight_spec.size(); ++i ) {
-				std::vector< std::string > elts = split_and_strip_discarding_empty_entries( weight_spec[i], "=", " \t\r\n" ) ;
-				if( elts.size() != 2 ) {
-					throw genfile::BadArgumentError(
-						"BingwaApplication::get_prior_names()",
-						"-prior-weights " + join( weight_spec, " " ),
-						"Spec \"" + weight_spec[i] + "\" appears malformed.  It should be of the form <model name>=<weight>."
-					) ;
+			std::vector< std::string > const weight_specs = options.get_values< std::string >( "-prior-weights" ) ;
+			for( std::size_t j = 0; j < weight_specs.size(); ++j ) {
+				std::vector< std::string > weight_spec ;
+				if( boost::filesystem::exists( weight_spec[j] )) {
+					std::ifstream str( weight_spec[j].c_str() ) ;
+					std::copy( std::istream_iterator< std::string >( str ), std::istream_iterator< std::string >(), std::back_inserter< std::vector< std::string > >( weight_spec )) ;
+				} else {
+					weight_spec.push_back( weight_specs[j] ) ;
 				}
-				if( result.find( elts[0] ) == result.end() ) {
-					throw genfile::BadArgumentError(
-						"BingwaApplication::get_prior_names()",
-						"-prior-weights " + join( weight_spec, " " ),
-						"Spec \"" + weight_spec[i] + "\" refers to a model (\"" + elts[0] + "\") that has not been specified."
-					) ;
-				}
-				try {
-					double weight = to_repr< double >( elts[1] ) ;
-					result[ elts[0] ] = weight ;
-				} catch( StringConversionError const& e ) {
-					throw genfile::BadArgumentError(
-						"BingwaApplication::get_prior_names()",
-						"-prior-weights " + join( weight_spec, " " ),
-						"In spec \"" + weight_spec[i] + ", the weight appears malformed."
-					) ;
+				for( std::size_t i = 0; i < weight_spec.size(); ++i ) {
+					std::vector< std::string > elts = split_and_strip_discarding_empty_entries( weight_spec[i], "=", " \t\r\n" ) ;
+					if( elts.size() != 2 ) {
+						throw genfile::BadArgumentError(
+							"BingwaApplication::get_prior_names()",
+							"-prior-weights " + join( weight_spec, " " ),
+							"Spec \"" + weight_spec[i] + "\" appears malformed.  It should be of the form <model name>=<weight>."
+						) ;
+					}
+					if( result.find( elts[0] ) == result.end() ) {
+						throw genfile::BadArgumentError(
+							"BingwaApplication::get_prior_names()",
+							"-prior-weights " + join( weight_spec, " " ),
+							"Spec \"" + weight_spec[i] + "\" refers to a model (\"" + elts[0] + "\") that has not been specified."
+						) ;
+					}
+					try {
+						double weight = to_repr< double >( elts[1] ) ;
+						result[ elts[0] ] = weight ;
+					} catch( StringConversionError const& e ) {
+						throw genfile::BadArgumentError(
+							"BingwaApplication::get_prior_names()",
+							"-prior-weights " + join( weight_spec, " " ),
+							"In spec \"" + weight_spec[i] + ", the weight appears malformed."
+						) ;
+					}
 				}
 			}
 		} else {
@@ -2897,7 +2925,7 @@ public:
 			end_name_i = prior_names.end() ;
 
 		
-		for( std::size_t model_count = 0, submodel_count = 0; name_i != end_name_i; ++name_i, ++model_count ) {
+		for( std::size_t model_count = 0; name_i != end_name_i; ++name_i, ++model_count ) {
 			get_ui_context().logger() << "Model " << *name_i ;
 			{
 				PriorWeights::const_iterator where = prior_weights.find( *name_i ) ;
