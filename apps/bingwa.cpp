@@ -2841,8 +2841,8 @@ public:
 			std::vector< std::string > const weight_specs = options.get_values< std::string >( "-prior-weights" ) ;
 			for( std::size_t j = 0; j < weight_specs.size(); ++j ) {
 				std::vector< std::string > weight_spec ;
-				if( boost::filesystem::exists( weight_spec[j] )) {
-					std::ifstream str( weight_spec[j].c_str() ) ;
+				if( boost::filesystem::exists( weight_specs[j] )) {
+					std::ifstream str( weight_specs[j].c_str() ) ;
 					std::copy( std::istream_iterator< std::string >( str ), std::istream_iterator< std::string >(), std::back_inserter< std::vector< std::string > >( weight_spec )) ;
 				} else {
 					weight_spec.push_back( weight_specs[j] ) ;
