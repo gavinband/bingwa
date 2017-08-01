@@ -112,7 +112,7 @@ namespace bingwa {
 		DesiredColumns result ;
 	
 		{
-			regex unwanted_column_details( "^.*(bayesian|frequentist)_(add|dom|het|gen|rec)(_newml|ml|score|em|threshhold|expected)*_" ) ;
+			regex unwanted_column_details( "^.*(bayesian|frequentist)_(add|dom|het|gen|rec|het[+]hom)(_newml|ml|score|em|threshhold|expected)*_" ) ;
 
 			std::vector< std::size_t > beta_indices ;
 			for( std::size_t i = 0; i < 1000; ++i ) {
@@ -178,7 +178,7 @@ namespace bingwa {
 		}
 
 		{
-			regex const pvalue_regex( replace_all( m_beta_column_regex, "_beta_<i>", ".*frequentist_(add|dom|het|gen|rec)(_ml|_em|_score|_threshhold|_lrt)*_pvalue" ) ) ;
+			regex const pvalue_regex( replace_all( m_beta_column_regex, "_beta_<i>", ".*(bayesian|frequentist)_(add|dom|het|gen|rec|het[+]hom)(_ml|_em|_score|_threshhold|_lrt)*_pvalue" ) ) ;
 			boost::optional< ColumnSpec > matched_pvalue_column = impl::get_matching_name( column_names, pvalue_regex, true, "pvalue" ) ;
 			if( !matched_pvalue_column ) {
 				throw genfile::BadArgumentError(

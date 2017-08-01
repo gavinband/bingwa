@@ -36,14 +36,6 @@ namespace bingwa {
 		std::size_t const N = m_cohort_names.size() ;
 		for( std::size_t i = 0; i < N; ++i ) {
 			std::string prefix = m_cohort_names[ i ] + ":" ;
-			callback( prefix + "A", "FLOAT" ) ;
-			callback( prefix + "B", "FLOAT" ) ;
-			callback( prefix + "AA", "FLOAT" ) ;
-			callback( prefix + "AB", "FLOAT" ) ;
-			callback( prefix + "BB", "FLOAT" ) ;
-			callback( prefix + "NULL", "FLOAT" ) ;
-			callback( prefix + "B_allele_frequency", "FLOAT" ) ;
-			callback( prefix + "maf", "FLOAT" ) ;
 
 			for( std::size_t i = 0; i < m_effect_parameter_names.size(); ++i ) {
 //				callback( prefix + "beta_" + to_string( i+1 ) ) ;
@@ -56,13 +48,7 @@ namespace bingwa {
 					callback( prefix + m_effect_parameter_names.covariance_name(i,j), "FLOAT" ) ;
 				}
 			}
-			
 			callback( prefix + "pvalue", "FLOAT" ) ;
-			callback( prefix + "info", "FLOAT" ) ;
-
-			BOOST_FOREACH( std::string const& variable, m_extra_variables ) {
-				callback( prefix + variable, "NULL" ) ;
-			}
 		}
 	}
 	
@@ -77,42 +63,14 @@ namespace bingwa {
 				Eigen::VectorXd betas ;
 				Eigen::VectorXd ses ;
 				Eigen::VectorXd covariance ;
-				Eigen::VectorXd counts ;
 				double pvalue ;
-				double info ;
-				double maf ;
 				data_getter.get_betas( i, &betas ) ;
 				data_getter.get_ses( i, &ses ) ;
 				data_getter.get_covariance_upper_triangle( i, &covariance ) ;
-				
-				data_getter.get_counts( i, &counts ) ;
 				data_getter.get_pvalue( i, &pvalue ) ;
-				data_getter.get_info( i, &info ) ;
-				data_getter.get_maf( i, &maf ) ;
 
-				assert( counts.size() == 6 ) ;
 				using genfile::string_utils::to_string ;
 				std::string prefix = m_cohort_names[ i ] + ":" ;
-				callback( prefix + "A", counts(0) ) ;
-				callback( prefix + "B", counts(1) ) ;
-				callback( prefix + "AA", counts(2) ) ;
-				callback( prefix + "AB", counts(3) ) ;
-				callback( prefix + "BB", counts(4) ) ;
-				callback( prefix + "NULL", counts(5) ) ;
-
-				double B_allele_count = 0 ;
-				double total_allele_count = 0 ;
-				if( counts(0) == counts(0) ) {
-					B_allele_count += counts(1) ;
-					total_allele_count += counts(0) + counts(1) ;
-				}
-				if( counts(2) == counts(2) ) {
-					B_allele_count += counts(3) + 2 * counts(4) ;
-					total_allele_count += 2.0 * ( counts(2) + counts(3) + counts(4) ) ;
-				}
-				callback( prefix + "B_allele_frequency", B_allele_count / total_allele_count ) ;
-				callback( prefix + "maf", maf ) ;
-				
 				assert( betas.size() == ses.size() ) ;
 				assert( covariance.size() == ( betas.size() - 1 ) * betas.size() / 2 ) ;
 				for( int j = 0; j < betas.size(); ++j ) {
@@ -132,14 +90,6 @@ namespace bingwa {
 					assert( index == covariance.size() ) ;
 				}
 				callback( prefix + "pvalue", pvalue ) ;
-				callback( prefix + "info", info ) ;
-				{
-					std::string value ;
-					BOOST_FOREACH( std::string const& variable, m_extra_variables ) {
-						data_getter.get_variable( variable, i, &value ) ;
-						callback( prefix + variable, value ) ;
-					}
-				}
 			}
 		}
 	}

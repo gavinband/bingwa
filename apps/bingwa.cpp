@@ -57,6 +57,7 @@
 #include "bingwa/MMMResults.hpp"
 #include "bingwa/BingwaComputation.hpp"
 #include "bingwa/PerCohortValueReporter.hpp"
+#include "bingwa/PerCohortCountsReporter.hpp"
 
 // #define DEBUG_BINGWA 1
 
@@ -253,6 +254,10 @@ struct BingwaOptions: public appcontext::CmdLineOptionProcessor {
 		
 			options[ "-no-meta-analysis" ]
 				.set_description( "Don't do a fixed effect meta-analysis.  Instead, just match up SNPs and store per-cohort values." ) ;
+			options[ "-no-counts" ]
+				.set_description( "Don't output per-cohort allele or genotype counts." ) ;
+			options[ "-output-all-variants" ]
+				.set_description( "Output all variants, even those where there is no trustworthy data" ) ;
 		}
 		{
 			options.declare_group( "Bayesian analysis options" ) ;
@@ -335,7 +340,7 @@ namespace impl {
 	}
 	
 	bool info_maf_filter( bingwa::BingwaComputation::DataGetter const& data_getter, int i, double const lower_info_threshhold, double const lower_maf_threshhold ) {
-		bool result = data_getter.is_non_missing( i ) ;
+		bool result = data_getter.is_non_missing( i ) && data_getter.is_trusted( i ) ;
 		if( result ) {
 			double info ;
 			double maf ;
@@ -352,48 +357,6 @@ namespace impl {
 		return result ;
 	}
 
-	bool minor_allele_count_filter( bingwa::BingwaComputation::DataGetter const& data_getter, int i, double const threshhold ) {
-		bool result = data_getter.is_non_missing( i ) ;
-		if( result ) {
-			Eigen::VectorXd counts = Eigen::VectorXd::Zero(6) ;
-			data_getter.get_counts( i, &counts ) ;
-			// counts 0-1 are A/B
-			// counts 2-4 are AA/AB/BB
-
-			double alleleCount = counts(0) + (2 * counts(2)) + counts(3) ;
-			double const totalAlleles = counts(0) + counts(1) + 2 * (counts(2) + counts(3) + counts(4)) ;
-			if( alleleCount > totalAlleles / 2 ) {
-				alleleCount = totalAlleles - alleleCount ;
-			}
-			
-			if( alleleCount < threshhold ) {
-				result = false ;
-			}
-		}
-		return result ;
-	}
-
-	bool minor_homozygote_filter( bingwa::BingwaComputation::DataGetter const& data_getter, int i, double const threshhold ) {
-		bool result = data_getter.is_non_missing( i ) ;
-		if( result ) {
-			Eigen::VectorXd counts = Eigen::VectorXd::Zero(4) ;
-			data_getter.get_counts( i, &counts ) ;
-			// counts 0-1 are A/B
-			// counts 2-4 are AA/AB/BB
-			// predictor is 1 for a B or a BB, 0 otherwise.
-			double count = counts(1) + counts(4) ;
-			double const total = counts.head(5).sum() ;
-			if( count > total / 2 ) {
-				count = total - count ;
-			}
-			
-			if( count < threshhold ) {
-				result = false ;
-			}
-		}
-		return result ;
-	}
-	
 	bool get_betas_and_ses_for_cohort(
 		bingwa::BingwaComputation::DataGetter const& data_getter,
 		bingwa::BingwaComputation::Filter filter,
@@ -598,6 +561,7 @@ namespace impl {
 		std::vector< std::string > elts = genfile::string_utils::split( spec, ":" ) ;
 		if( spec.size() > 9 && spec.substr(0,9) == "sqlite://" ) {
 			elts.erase( elts.begin() ) ;
+			elts[0] = elts[0].substr( 2, elts[0].size() ) ;
 		}
 		assert( elts.size() >= 1 ) ;
 		if( elts.size() > 3 ) {
@@ -607,7 +571,6 @@ namespace impl {
 				"Expected format for sqlite filespec is sqlite://<file name>[:<bf table name>][:<count table name>]."
 			) ;
 		}
-		elts[0] = elts[0].substr( 2, elts[0].size() ) ;
 		return( elts ) ;
 	}
 	
@@ -1360,13 +1323,17 @@ namespace bingwa {
 		if( name == "MultivariateFixedEffectMetaAnalysis" ) {
 			result.reset( new MultivariateFixedEffectMetaAnalysis( name ) ) ;
 		}
-		else if( name == "PerCohortValueReporter" ) {
-			bingwa::PerCohortValueReporter::UniquePtr pcv( new bingwa::PerCohortValueReporter( cohort_names ) ) ;
+		else if( name == "PerCohortCountsReporter" ) {
+			bingwa::PerCohortCountsReporter::UniquePtr pcc( new bingwa::PerCohortCountsReporter( cohort_names ) ) ;
 			if( options.check( "-extra-columns" )) {
 				BOOST_FOREACH( std::string const& variable, options.get_values( "-extra-columns" )) {
-					pcv->add_variable( variable ) ;
+					pcc->add_variable( variable ) ;
 				}
 			}
+			result.reset( pcc.release() ) ;	
+		}
+		else if( name == "PerCohortValueReporter" ) {
+			bingwa::PerCohortValueReporter::UniquePtr pcv( new bingwa::PerCohortValueReporter( cohort_names ) ) ;
 			result.reset( pcv.release() ) ;
 		}
 		else {
@@ -1387,12 +1354,17 @@ public:
 	
 	BingwaProcessor( genfile::VariantIdentifyingData::CompareFields const& compare_fields ):
 		m_snps( compare_fields ),
-		m_flip_alleles_if_necessary( false )
+		m_flip_alleles_if_necessary( false ),
+		m_output_all_variants( false )
 	{
 	}
 	
 	void set_flip_alleles( void ) {
 		m_flip_alleles_if_necessary = true ;
+	}
+
+	void set_output_all_variants() {
+		m_output_all_variants = true ;
 	}
 	
 	void add_cohort( std::string const& name, FrequentistGenomeWideAssociationResults::UniquePtr results ) {
@@ -1515,6 +1487,7 @@ private:
 	typedef std::map< std::vector< bool >, std::size_t > CategoryCounts ;
 	CategoryCounts m_category_counts ;
 	bool m_flip_alleles_if_necessary ;
+	bool m_output_all_variants ;
 	
 	ResultSignal m_result_signal ;
 
@@ -1529,7 +1502,24 @@ private:
 		{}
 		
 		std::size_t get_number_of_cohorts() const { return m_cohorts.size() ; }
+
+		bool has_useful_data() const {
+			bool result = false ;
+			for( std::size_t i = 0; i < m_cohorts.size(); ++i ) {
+				result = result || ( is_non_missing(i) && m_cohorts[i].is_trusted( m_indices[i]->index )) ;
+			}
+			return result ;
+		}
 		
+		bool is_non_missing( std::size_t i ) const {
+			return( m_indices[i] ) ;
+		}
+
+		bool is_trusted( std::size_t i ) const {
+			assert( is_non_missing(i) ) ;
+			return m_cohorts[i].is_trusted( m_indices[i]->index ) ;
+		}
+	
 		void get_counts( std::size_t i, Eigen::VectorXd* result ) const {
 			if( is_non_missing( i ) ) {
 				m_cohorts[i].get_counts( m_indices[i]->index, result ) ;
@@ -1573,9 +1563,6 @@ private:
 			if( is_non_missing( i ) ) {
 				m_cohorts[i].get_maf( m_indices[i]->index, result ) ;
 			}
-		}
-		bool is_non_missing( std::size_t i ) const {
-			return( m_indices[i] ) ;
 		}
 		void get_variable( std::string const& variable, std::size_t i, std::string* result ) const {
 			m_cohorts[i].get_variable( m_indices[i]->index, variable, result ) ;
@@ -1669,16 +1656,18 @@ private:
 			for( std::size_t snp_index = 0; snp_i != end_i; ++snp_i, ++snp_index ) {
 				std::vector< OptionalSnpMatch > const& indices = snp_i->second ;
 				DataGetter data_getter( m_cohorts, indices ) ;
-				for( std::size_t i = 0; i < m_computations.size(); ++i ) {
-					m_computations[i](
-						snp_i->first,
-						data_getter,
-						boost::bind(
-							boost::ref( m_result_signal ),
+				if( m_output_all_variants || data_getter.has_useful_data() ) {
+					for( std::size_t i = 0; i < m_computations.size(); ++i ) {
+						m_computations[i](
 							snp_i->first,
-							_1, _2
-						)
-					) ;
+							data_getter,
+							boost::bind(
+								boost::ref( m_result_signal ),
+								snp_i->first,
+								_1, _2
+							)
+						) ;
+					}
 				}
 
 				progress_context( snp_index + 1, m_snps.size() ) ;
@@ -1716,6 +1705,9 @@ public:
 		if( options().check( "-flip-alleles" )) {
 			m_processor->set_flip_alleles() ;
 		}
+		if( options().check( "-output-all-variants" )) {
+			m_processor->set_output_all_variants() ;
+		}
 	}
 	
 	void run() {
@@ -1743,6 +1735,10 @@ public:
 			get_ui_context().logger() << "!! Option error (" << e.what() << "): " << e.message() << ".\n" ;
 			throw appcontext::HaltProgramWithReturnCode( -1 ) ;
 		}
+		catch( statfile::InvalidColumnNameError const& e ) {
+			get_ui_context().logger() << "!! Column name \"" << e.name() << "\" was invalid.\n" ;
+			throw appcontext::HaltProgramWithReturnCode( -1 ) ;
+		}
 	}
 
 	void unsafe_run() {
@@ -1763,13 +1759,6 @@ public:
 				options().get_values_as_map(),
 				options().get< std::string >( "-snp-match-fields" )
 			) ;
-			
-			if( elts.size() < 2 ) {
-				elts.push_back( "Meta" ) ;
-			}
-			if( elts.size() < 3 ) {
-				elts.push_back( "Detail" ) ;
-			}
 			storage = table_storage ;
 			
 		} else {
@@ -1808,7 +1797,13 @@ public:
 
 		if( options().check( "-data" ) && options().get_values< std::string >( "-data" ).size() > 0 ) {
 			impl::VariableMap meta_variables ;
+			impl::VariableMap counts_variables ;
 			impl::VariableMap detail_variables ;
+			if( !options().check( "-no-counts" )) {
+				bingwa::BingwaComputation::UniquePtr computation = bingwa::BingwaComputation::create( "PerCohortCountsReporter", cohort_names, options() ) ;
+				computation->get_variables( boost::bind( impl::insert_into_map< impl::VariableMap >, &counts_variables, _1, _2 ) ) ;
+				m_processor->add_computation( "PerCohortCountsReporter", computation ) ;
+			}
 			{
 				bingwa::BingwaComputation::UniquePtr computation = bingwa::BingwaComputation::create( "PerCohortValueReporter", cohort_names, options() ) ;
 				computation->set_effect_parameter_names( m_processor->get_effect_parameter_names() ) ;
@@ -1920,6 +1915,12 @@ public:
 						) ;
 					}
 					summarise_priors( priors, prior_names, prior_weights, cohort_names ) ;
+				}
+				if( counts_variables.size() > 0 ) {
+					storage->add_table(
+						options().get_value( "-table-prefix" ) + "Counts",
+						boost::bind( &impl::contains_variable, counts_variables, _1 )
+					) ;
 				}
 				if( detail_variables.size() > 0 ) {
 					storage->add_table(
@@ -3110,7 +3111,7 @@ public:
 
 			boost::optional< std::string > effect_size_column_regex ;
 			if( options().check( "-effect-size-column-regex" ) ) {
-				std::vector< std::string > values = options().get_values< std::string >( "g-column-regex" ) ;
+				std::vector< std::string > values = options().get_values< std::string >( "-effect-size-column-regex" ) ;
 				if( values.size() != cohort_files.size() ) {
 					throw genfile::BadArgumentError(
 						"BingwaApplication::load_data()",

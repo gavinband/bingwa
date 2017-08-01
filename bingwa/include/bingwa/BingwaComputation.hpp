@@ -30,6 +30,7 @@ namespace bingwa {
 			virtual ~DataGetter() {} ;
 			virtual std::size_t get_number_of_cohorts() const = 0 ;
 			virtual bool is_non_missing( std::size_t i ) const = 0 ;
+			virtual bool is_trusted( std::size_t i ) const = 0 ;
 			virtual void get_counts( std::size_t, Eigen::VectorXd* result ) const = 0 ;
 			virtual void get_betas( std::size_t i, Eigen::VectorXd* result ) const = 0 ;
 			virtual void get_ses( std::size_t i, Eigen::VectorXd* result  ) const = 0 ;

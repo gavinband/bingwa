@@ -39,6 +39,9 @@ genfile::VariantIdentifyingData const& FlatFileFrequentistGenomeWideAssociationR
 	return m_snps[ snp_i ] ;
 }
 
+bool FlatFileFrequentistGenomeWideAssociationResults::is_trusted( std::size_t snp_i ) const {
+	return bool( m_trusted[ snp_i ] ) ;
+}
 void FlatFileFrequentistGenomeWideAssociationResults::get_betas( std::size_t snp_i, Eigen::VectorXd* result ) const {
 	*result = m_betas.row( snp_i ).cast< double >() ;
 }
@@ -168,9 +171,8 @@ void FlatFileFrequentistGenomeWideAssociationResults::setup(
 		}
 
 		m_snps[ snp_index ] = snp ;
-		if( check_if_snp_accepted( snp_index ) ) {
-			++snp_index ;
-		}
+		m_trusted[ snp_index ] = check_if_snp_accepted( snp_index ) ;
+		++snp_index ;
 
 		if( progress_callback ) {
 			progress_callback( double( source->number_of_rows_read() + 1 ), source->number_of_rows() ) ;
@@ -236,6 +238,9 @@ void FlatFileFrequentistGenomeWideAssociationResults::resize_storage( Eigen::Mat
 		std::vector< genfile::VariantIdentifyingData > snps( N_snps ) ;
 		std::copy( m_snps.begin(), m_snps.end(), snps.begin() ) ;
 		m_snps.swap( snps ) ;
+		std::vector< unsigned char > trusted( N_snps ) ;
+		std::copy( m_trusted.begin(), m_trusted.begin() + current_N, trusted.begin() ) ;
+		m_trusted.swap( trusted ) ;
 	}
 	{
 		Eigen::MatrixXf betas = Eigen::MatrixXf::Zero( N_snps, degrees_of_freedom ) ;
@@ -294,6 +299,10 @@ void FlatFileFrequentistGenomeWideAssociationResults::free_unused_memory() {
 	{
 		std::vector< genfile::VariantIdentifyingData > snps( m_snps.begin(), m_snps.end() ) ;
 		m_snps.swap( snps ) ;
+	}
+	{
+		std::vector< unsigned char > trusted( m_trusted.begin(), m_trusted.end() ) ;
+		m_trusted.swap( trusted ) ;
 	}
 	{
 		Eigen::MatrixXf betas = m_betas.block( 0, 0, N_snps, m_betas.cols() ) ;

@@ -36,6 +36,7 @@ public:
 	std::size_t get_number_of_SNPs() const ;
 
 	genfile::VariantIdentifyingData const& get_SNP( std::size_t snp_i ) const ;
+	bool is_trusted( std::size_t snp_i ) const ;
 	void get_betas( std::size_t snp_i, Eigen::VectorXd* result ) const ;
 	void get_ses( std::size_t snp_i, Eigen::VectorXd* result ) const ;
 	void get_covariance_upper_triangle( std::size_t snp_i, Eigen::VectorXd* result ) const ; 
@@ -110,6 +111,7 @@ protected:
 	boost::optional< SourceColumnMap > m_column_map ;
 	
 	std::vector< genfile::VariantIdentifyingData > m_snps ;
+	std::vector< unsigned char > m_trusted ;
 	int m_degrees_of_freedom ;
 	Eigen::MatrixXf m_betas ;
 	Eigen::MatrixXf m_ses ;

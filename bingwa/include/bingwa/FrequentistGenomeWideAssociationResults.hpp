@@ -47,6 +47,7 @@ public:
 	virtual std::size_t get_number_of_SNPs() const = 0 ;
 	virtual genfile::VariantIdentifyingData const& get_SNP( std::size_t snp_i ) const = 0 ;
 	virtual bingwa::EffectParameterNamePack get_effect_parameter_names() const = 0 ;
+	virtual bool is_trusted( std::size_t snp_i ) const = 0 ;
 	virtual void get_betas( std::size_t snp_i, Eigen::VectorXd* result ) const = 0 ;
 	virtual void get_ses( std::size_t snp_i, Eigen::VectorXd* result ) const = 0 ; 
 	virtual void get_covariance_upper_triangle( std::size_t snp_i, Eigen::VectorXd* result ) const = 0 ; 
