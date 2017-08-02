@@ -630,13 +630,21 @@ namespace impl {
 //
 // Here is R code for the same computation:
 /*
-	bayesian_meta_analysis <- function( betas, ses, prior ) {
-		if( length( ses ) > 1 ) {
-			V = diag( ses^2 ) ;
+	compute.bayesian_meta_analysis <- function( betas, ses = NULL, V = NULL, prior ) {
+		if( is.null( V )) {
+			if( length( ses ) > 1 ) {
+				V = diag( ses^2 ) ;
+			} else {
+				V = matrix( data = ses^2, nrow = 1, ncol = 1 )
+			}
 		} else {
-			V = matrix( data = ses^2, nrow = 1, ncol = 1 )
+			stopifnot( is.null( ses ))
 		}
 		betas = matrix( betas, ncol = 1, nrow = length( betas )) ;
+		wNotNA = which( !is.na( diag(V)) & !is.na( betas ))
+		if( length( wNotNA ) == 0 ) { return( NA ) }
+		betas = betas[wNotNA,,drop=F]
+		V = V[wNotNA,wNotNA,drop= F]
 		constant = sqrt( det( V ) / det( V + prior ) ) ;
 		exponent = 0.5 * t( betas ) %*% ( solve( V ) - solve( V + prior ) ) %*% betas
 		print( V )
