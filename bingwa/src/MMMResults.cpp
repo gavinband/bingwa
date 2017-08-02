@@ -90,15 +90,12 @@ namespace bingwa {
 		;
 	}
 
-
 	MMMResults::DesiredColumns MMMResults::setup_columns( std::vector< std::string > const& columns ) {
 		DesiredColumns result ;
 		using boost::regex ;
 		result.push_back( *impl::get_matching_name( columns, regex( m_effect_column_regex ), true, "beta" ) ) ;
 		result.push_back( *impl::get_matching_name( columns, regex( m_se_column_regex ), true, "se" ) ) ;
 		result.push_back( *impl::get_matching_name( columns, regex( "pval" ), true, "pvalue" ) ) ;
-		result.push_back( *impl::get_matching_name( columns, regex( "var_info_all" ), true, "info" ) ) ;
-		result.push_back( *impl::get_matching_name( columns, regex( "freq_1" ), true, "info" ) ) ;
 		result.push_back( *impl::get_matching_name( columns, regex( "gen_00" ), true, "counts" ) ) ;
 		result.push_back( *impl::get_matching_name( columns, regex( "gen_01" ), true, "counts" ) ) ;
 		result.push_back( *impl::get_matching_name( columns, regex( "gen_11" ), true, "counts" ) ) ;
@@ -122,12 +119,6 @@ namespace bingwa {
 		}
 		else if( variable == "pval" ) {
 			m_pvalues( snp_index ) = ( value == "NA" ? NA: to_repr< double >( value ) ) ;
-		}
-		else if( variable == "var_info_all" ) {
-			m_info( snp_index ) = ( value == "NA" ? NA: to_repr< double >( value ) ) ;
-		}
-		else if( variable == "freq_1" ) {
-			m_maf( snp_index ) = ( value == "NA" ? NA: to_repr< double >( value ) ) ;
 		}
 		else if( variable == "gen_00" ) {
 			m_sample_counts( snp_index, 2 ) = ( value == "NA" ? NA: to_repr< double >( value ) ) ;

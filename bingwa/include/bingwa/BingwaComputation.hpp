@@ -10,6 +10,7 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <map>
 #include <boost/function.hpp>
 #include <boost/noncopyable.hpp>
 #include <Eigen/Core>
@@ -21,7 +22,11 @@
 namespace bingwa {
 	struct BingwaComputation: public boost::noncopyable {
 		typedef std::auto_ptr< BingwaComputation > UniquePtr ;
-		static UniquePtr create( std::string const& name, std::vector< std::string > const& cohort_names, appcontext::OptionProcessor const& ) ;
+		static UniquePtr create(
+			std::string const& name,
+			std::vector< std::string > const& cohort_names,
+			appcontext::OptionProcessor const&
+		) ;
 		virtual ~BingwaComputation() {}
 		typedef genfile::VariantIdentifyingData VariantIdentifyingData ;
 		typedef boost::function< void ( std::string const& value_name, genfile::VariantEntry const& value ) > ResultCallback ;
@@ -36,8 +41,6 @@ namespace bingwa {
 			virtual void get_ses( std::size_t i, Eigen::VectorXd* result  ) const = 0 ;
 			virtual void get_covariance_upper_triangle( std::size_t i, Eigen::VectorXd* result  ) const = 0 ;
 			virtual void get_pvalue( std::size_t i, double* result ) const = 0 ;
-			virtual void get_info( std::size_t i, double* result ) const = 0 ;
-			virtual void get_maf( std::size_t i, double* result ) const = 0 ;
 			virtual void get_variable( std::string const& variable, std::size_t i, std::string* result ) const = 0 ;
 		} ;
 

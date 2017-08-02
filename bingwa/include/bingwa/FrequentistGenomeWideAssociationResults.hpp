@@ -53,9 +53,7 @@ public:
 	virtual void get_covariance_upper_triangle( std::size_t snp_i, Eigen::VectorXd* result ) const = 0 ; 
 	virtual void get_pvalue( std::size_t snp_i, double* result ) const = 0 ;
 	virtual void get_counts( std::size_t snp_i, Eigen::VectorXd* result ) const = 0 ;
-	virtual void get_info( std::size_t snp_i, double* result ) const = 0 ;
-	virtual void get_maf( std::size_t snp_i, double* result ) const = 0 ;
-	virtual void get_frequency( std::size_t snp_i, double* result ) const = 0 ;
+	virtual std::vector< std::string > list_variables() const = 0 ; 
 	virtual void get_variable( std::size_t snp_i, std::string const& variable, std::string* result ) const = 0 ;
 	
 	virtual std::string get_summary( std::string const& prefix = "", std::size_t target_column = 80 ) const = 0 ;

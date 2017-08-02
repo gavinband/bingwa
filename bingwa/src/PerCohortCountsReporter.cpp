@@ -18,13 +18,13 @@
 #include "bingwa/PerCohortCountsReporter.hpp"
 
 namespace bingwa {
-	PerCohortCountsReporter::PerCohortCountsReporter( std::vector< std::string > const& cohort_names ):
-		m_cohort_names( cohort_names )
+	PerCohortCountsReporter::PerCohortCountsReporter(
+		std::vector< std::string > const& cohort_names,
+		std::vector< std::vector< std::string > > const& variables
+	):
+		m_cohort_names( cohort_names ),
+		m_variables( variables )
 	{}
-	
-	void PerCohortCountsReporter::add_variable( std::string const& variable ) {
-		m_extra_variables.insert( variable ) ;
-	}
 	
 	void PerCohortCountsReporter::set_effect_parameter_names( EffectParameterNamePack const& names ) {
 	}
@@ -43,9 +43,8 @@ namespace bingwa {
 			callback( prefix + "BB", "FLOAT" ) ;
 			callback( prefix + "NULL", "FLOAT" ) ;
 			callback( prefix + "B_allele_frequency", "FLOAT" ) ;
-			callback( prefix + "maf", "FLOAT" ) ;
-			callback( prefix + "info", "FLOAT" ) ;
-			BOOST_FOREACH( std::string const& variable, m_extra_variables ) {
+			
+			BOOST_FOREACH( std::string const& variable, m_variables[i] ) {
 				callback( prefix + variable, "NULL" ) ;
 			}
 		}
@@ -64,8 +63,6 @@ namespace bingwa {
 				double maf ;
 				
 				data_getter.get_counts( i, &counts ) ;
-				data_getter.get_info( i, &info ) ;
-				data_getter.get_maf( i, &maf ) ;
 
 				assert( counts.size() == 6 ) ;
 				using genfile::string_utils::to_string ;
@@ -89,12 +86,10 @@ namespace bingwa {
 					total_allele_count += 2.0 * ( counts(2) + counts(3) + counts(4) ) ;
 				}
 				callback( prefix + "B_allele_frequency", B_allele_count / total_allele_count ) ;
-				callback( prefix + "maf", maf ) ;
-				callback( prefix + "info", info ) ;
 
 				{
 					std::string value ;
-					BOOST_FOREACH( std::string const& variable, m_extra_variables ) {
+					BOOST_FOREACH( std::string const& variable, m_variables[i] ) {
 						data_getter.get_variable( variable, i, &value ) ;
 						callback( prefix + variable, value ) ;
 					}

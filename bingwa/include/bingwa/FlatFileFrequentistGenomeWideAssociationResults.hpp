@@ -10,6 +10,7 @@
 #include <boost/bimap.hpp>
 #include <boost/regex.hpp>
 #include "statfile/BuiltInTypeStatSource.hpp"
+#include "statfile/FilteringStatSource.hpp"
 #include "bingwa/FrequentistGenomeWideAssociationResults.hpp"
 
 /*
@@ -33,6 +34,9 @@ public:
 		ProgressCallback progress_callback
 	) ;
 
+	void add_variable( std::string const& variable ) ;
+	void add_trust_constraint( statfile::BoundConstraint constraint ) ;
+
 	std::size_t get_number_of_SNPs() const ;
 
 	genfile::VariantIdentifyingData const& get_SNP( std::size_t snp_i ) const ;
@@ -41,10 +45,12 @@ public:
 	void get_ses( std::size_t snp_i, Eigen::VectorXd* result ) const ;
 	void get_covariance_upper_triangle( std::size_t snp_i, Eigen::VectorXd* result ) const ; 
 	void get_pvalue( std::size_t snp_i, double* result ) const ;
+	/* Get genotype counts, as a vector of length 6 in this order:
+	* haploid A, B, diploid AA, AB, BB, NULL call. */
 	void get_counts( std::size_t snp_i, Eigen::VectorXd* result ) const ;
-	void get_info( std::size_t snp_i, double* result ) const ;
-	void get_maf( std::size_t snp_i, double* result ) const ;
-	void get_frequency( std::size_t snp_i, double* result ) const ;
+
+	/* Get values for user-specified or otherwise required / requested variables */
+	std::vector< std::string > list_variables() const ;
 	void get_variable( std::size_t snp_i, std::string const& variable, std::string* value ) const ;
 	std::string get_summary( std::string const& prefix, std::size_t target_column ) const ;
 
@@ -117,17 +123,18 @@ protected:
 	Eigen::MatrixXf m_ses ;
 	Eigen::MatrixXf m_covariance ;
 	Eigen::VectorXf m_pvalues ;
-	Eigen::VectorXf m_info ;
-	Eigen::VectorXf m_maf ;
 	Eigen::MatrixXf m_sample_counts ;
 	typedef Eigen::MatrixXf::ConstRowXpr Row ;
 	typedef std::map< std::string, std::vector< std::string > > ExtraVariables ;
 	ExtraVariables m_extra_variable_storage ;
+	std::set< std::string > m_variables ;
+	std::vector< statfile::BoundConstraint > m_trust_constraints ;
 	
 	FlatFileFrequentistGenomeWideAssociationResults() ;
 	
 	virtual DesiredColumns setup_columns( std::vector< std::string > const& column_names ) = 0 ;
 	virtual bool read_snp( statfile::BuiltInTypeStatSource& source, genfile::SNPIdentifyingData& snp ) const = 0 ;
+	bool check_if_snp_trusted( std::size_t snp_index ) const ;
 	virtual bool check_if_snp_accepted( std::size_t snp_index ) const = 0 ;
 	virtual void store_value( int snp_index, std::string const& variable, std::string const& value ) = 0 ;
 	

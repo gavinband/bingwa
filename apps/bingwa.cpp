@@ -184,15 +184,6 @@ struct BingwaOptions: public appcontext::CmdLineOptionProcessor {
 					"The i-th value should be a comma-separated list of files containing rsids to exclude from the i-th cohort, in the format output by gen-grep." )
 				.set_takes_values_until_next_option() 
 				.set_maximum_multiplicity( 100 ) ;
-		
-			options[ "-min-info" ]
-				.set_description( "Treat SNPs with info less than the given threshhold as missing." )
-				.set_takes_values( 1 ) ;
-
-			options[ "-min-maf" ]
-				.set_description( "Treat SNPs with maf (in controls) less than the given threshhold as missing." )
-				.set_takes_values( 1 ) ;
-			
 			options[ "-excl-snps-where" ]
 				.set_description( "Exclude SNPs that match a condition applied to columns of the input file." )
 				.set_takes_single_value()
@@ -201,6 +192,11 @@ struct BingwaOptions: public appcontext::CmdLineOptionProcessor {
 			options[ "-incl-snps-where" ]
 				.set_description( "Exclude SNPs that do not match a condition applied to columns of the input file." )
 				.set_takes_single_value()
+				.set_maximum_multiplicity(100) ;
+
+			options[ "-trust-variants-where" ]
+				.set_description( "Exclude *from the meta-analysis* summary statistics for SNPs that match a condition applied to columns of the input file." )
+				.set_takes_values_until_next_option()
 				.set_maximum_multiplicity(100) ;
 		}
 
@@ -335,28 +331,14 @@ namespace impl {
 		return data_getter.is_non_missing( i ) ;
 	}
 	
+	bool basic_trust_filter( bingwa::BingwaComputation::DataGetter const& data_getter, int i ) {
+		return data_getter.is_non_missing( i ) && data_getter.is_trusted( i ) ;
+	}
+	
 	bool single_population_filter( bingwa::BingwaComputation::DataGetter const& data_getter, int i, int population ) {
 		return ( i == population ) ;
 	}
 	
-	bool info_maf_filter( bingwa::BingwaComputation::DataGetter const& data_getter, int i, double const lower_info_threshhold, double const lower_maf_threshhold ) {
-		bool result = data_getter.is_non_missing( i ) && data_getter.is_trusted( i ) ;
-		if( result ) {
-			double info ;
-			double maf ;
-			data_getter.get_info( i, &info ) ;
-			data_getter.get_maf( i, &maf ) ;
-			if( (
-				lower_info_threshhold == lower_info_threshhold && ( info != info || info < lower_info_threshhold )
-			) || (
-				lower_maf_threshhold == lower_maf_threshhold && ( maf != maf || maf < lower_maf_threshhold )
-			) ) {
-				result = false ;
-			}
-		}
-		return result ;
-	}
-
 	bool get_betas_and_ses_for_cohort(
 		bingwa::BingwaComputation::DataGetter const& data_getter,
 		bingwa::BingwaComputation::Filter filter,
@@ -484,6 +466,22 @@ namespace impl {
 	}
 
 	enum Layout { eByBeta = 0, eByCohort = 1 } ;
+
+	void get_total_counts(
+		bingwa::BingwaComputation::DataGetter const& data_getter,
+		bingwa::BingwaComputation::Filter filter,
+		Eigen::VectorXd& counts
+	) {
+		counts.setZero( 6 ) ;
+		std::size_t N = data_getter.get_number_of_cohorts() ;
+		for( std::size_t i = 0; i < N; ++i ) {
+			if( filter( data_getter, i ) ) {
+				Eigen::VectorXd this_counts ;
+				data_getter.get_counts( i, &this_counts ) ;
+				counts += this_counts ;
+			}
+		}
+	}
 
 	// Layout depends on layout argument
 	// If layout == eByBeta then all beta_1's go in one contiguous block,
@@ -863,7 +861,7 @@ struct MultivariateFixedEffectMetaAnalysis: public bingwa::BingwaComputation {
 	):
 		m_name( name ),
 		m_prefix( name ),
-		m_filter( &impl::basic_missingness_filter )
+		m_filter( &impl::basic_trust_filter )
 	{}
 
 	void set_filter( Filter filter ) {
@@ -877,6 +875,7 @@ struct MultivariateFixedEffectMetaAnalysis: public bingwa::BingwaComputation {
 	void get_variables( boost::function< void ( std::string, std::string ) > callback ) const {
 		std::size_t const numberOfEffects = m_effect_parameter_names.size() ;
 		callback( m_prefix + ":included_betas", "TEXT" ) ;
+		callback( m_prefix + ":N", "FLOAT" ) ;
 		if( numberOfEffects > 0 ) {
 			for( std::size_t i = 0; i < numberOfEffects; ++i ) {
 				//callback( m_prefix + ( boost::format( ":beta_%d" ) % (i+1)).str(), "FLOAT" ) ;
@@ -910,63 +909,67 @@ struct MultivariateFixedEffectMetaAnalysis: public bingwa::BingwaComputation {
 		Eigen::VectorXd betas ;
 		Eigen::MatrixXd covariance ;
 		Eigen::VectorXd non_missingness ;
-	
+		Eigen::VectorXd counts ;
+		
 		if(
 			impl::get_betas_and_covariance_per_cohort( data_getter, m_filter, betas, covariance, non_missingness, numberOfEffects, impl::eByCohort )
-			&& non_missingness.sum() > 0
 		) {
+			impl::get_total_counts( data_getter, m_filter, counts ) ;
 			callback( m_prefix + ":included_betas", impl::to_01_string( non_missingness ) ) ;
-			
-			Eigen::MatrixXd nonmissingness_selector = impl::get_nonmissing_cohort_selector( non_missingness, data_getter.get_number_of_cohorts(), numberOfEffects ) ;
-#if DEBUG_BINGWA
-			std::cerr << "MultivariateFixedEffectMetaAnalysis::operator(): looking at variant: " << snp << "\n" ;
-			std::cerr << "MultivariateFixedEffectMetaAnalysis::operator(): pre-selector, N = " << data_getter.get_number_of_cohorts() << "\n"
-				<< "betas = " << betas.transpose() << ".\n"
-					<< "covariance = \n" << covariance << ".\n" ;
-#endif
+			callback( m_prefix + ":N", counts.segment( 0, 5 ).sum() ) ;
 
-			if( nonmissingness_selector.rows() > 0 ) {
-				betas = nonmissingness_selector * betas ;
-				covariance = nonmissingness_selector * covariance * nonmissingness_selector.transpose() ;
-
-				std::size_t const N = betas.size() / numberOfEffects ;
+			if( non_missingness.sum() > 0 ) {
+				Eigen::MatrixXd nonmissingness_selector = impl::get_nonmissing_cohort_selector( non_missingness, data_getter.get_number_of_cohorts(), numberOfEffects ) ;
 	#if DEBUG_BINGWA
-				std::cerr << "post-selector, N = " << N << "\n"
-					<< "betas = " << betas.transpose() << ".\n" ;
-				std::cerr << "variance =\n" << impl::format_matrix( covariance ) << ".\n" ;
-	#endif
-				Eigen::MatrixXd metaVariance ;
-				Eigen::VectorXd metaBeta ;
-				double chi_squared = 0 ;
-				impl::compute_fixed_effect_meta_and_variance( covariance, betas, N, numberOfEffects, &metaBeta, &metaVariance, &chi_squared ) ;
-				double const pvalue = impl::compute_chisquared_pvalue( chi_squared, numberOfEffects ) ;
-
-	#if DEBUG_BINGWA
-				std::cerr << "metaBeta = " << metaBeta.transpose() << ".\n" ;
-				std::cerr << "metaVariance =\n" << metaVariance << ".\n" ;
-				std::cerr << "chi_squared =\n" << chi_squared << ".\n" ;
-				std::cerr << "pvalue =\n" << pvalue << ".\n" ;
+				std::cerr << "MultivariateFixedEffectMetaAnalysis::operator(): looking at variant: " << snp << "\n" ;
+				std::cerr << "MultivariateFixedEffectMetaAnalysis::operator(): pre-selector, N = " << data_getter.get_number_of_cohorts() << "\n"
+					<< "betas = " << betas.transpose() << ".\n"
+						<< "covariance = \n" << covariance << ".\n" ;
 	#endif
 
-				for( std::size_t i = 0; i < numberOfEffects; ++i ) {
-					// callback( m_prefix + ( boost::format( ":beta_%d" ) % (i+1)).str(), metaBeta(i) ) ;
-					callback( m_prefix + ":" + m_effect_parameter_names.parameter_name(i), metaBeta(i) ) ;
-				}
-				for( std::size_t i = 0; i < numberOfEffects; ++i ) {
-					callback( m_prefix + ":" + m_effect_parameter_names.se_name(i), std::sqrt( metaVariance(i,i) ) ) ;
-				}
-				for( std::size_t i = 0; i < numberOfEffects; ++i ) {
-					callback(
-						m_prefix + ":" + m_effect_parameter_names.wald_pvalue_name(i),
-						impl::compute_normal_pvalue( metaBeta(i), metaVariance(i,i), impl::eBoth )
-					) ;
-				}
-				for( std::size_t i = 0; i < (numberOfEffects-1); ++i ) {
-					for( std::size_t j = i+1; j < numberOfEffects; ++j ) {
-						callback( m_prefix + ":" + m_effect_parameter_names.covariance_name(i,j), metaVariance(i,j) ) ;
+				if( nonmissingness_selector.rows() > 0 ) {
+					betas = nonmissingness_selector * betas ;
+					covariance = nonmissingness_selector * covariance * nonmissingness_selector.transpose() ;
+
+					std::size_t const N = betas.size() / numberOfEffects ;
+		#if DEBUG_BINGWA
+					std::cerr << "post-selector, N = " << N << "\n"
+						<< "betas = " << betas.transpose() << ".\n" ;
+					std::cerr << "variance =\n" << impl::format_matrix( covariance ) << ".\n" ;
+		#endif
+					Eigen::MatrixXd metaVariance ;
+					Eigen::VectorXd metaBeta ;
+					double chi_squared = 0 ;
+					impl::compute_fixed_effect_meta_and_variance( covariance, betas, N, numberOfEffects, &metaBeta, &metaVariance, &chi_squared ) ;
+					double const pvalue = impl::compute_chisquared_pvalue( chi_squared, numberOfEffects ) ;
+
+		#if DEBUG_BINGWA
+					std::cerr << "metaBeta = " << metaBeta.transpose() << ".\n" ;
+					std::cerr << "metaVariance =\n" << metaVariance << ".\n" ;
+					std::cerr << "chi_squared =\n" << chi_squared << ".\n" ;
+					std::cerr << "pvalue =\n" << pvalue << ".\n" ;
+		#endif
+
+					for( std::size_t i = 0; i < numberOfEffects; ++i ) {
+						// callback( m_prefix + ( boost::format( ":beta_%d" ) % (i+1)).str(), metaBeta(i) ) ;
+						callback( m_prefix + ":" + m_effect_parameter_names.parameter_name(i), metaBeta(i) ) ;
 					}
+					for( std::size_t i = 0; i < numberOfEffects; ++i ) {
+						callback( m_prefix + ":" + m_effect_parameter_names.se_name(i), std::sqrt( metaVariance(i,i) ) ) ;
+					}
+					for( std::size_t i = 0; i < numberOfEffects; ++i ) {
+						callback(
+							m_prefix + ":" + m_effect_parameter_names.wald_pvalue_name(i),
+							impl::compute_normal_pvalue( metaBeta(i), metaVariance(i,i), impl::eBoth )
+						) ;
+					}
+					for( std::size_t i = 0; i < (numberOfEffects-1); ++i ) {
+						for( std::size_t j = i+1; j < numberOfEffects; ++j ) {
+							callback( m_prefix + ":" + m_effect_parameter_names.covariance_name(i,j), metaVariance(i,j) ) ;
+						}
+					}
+					callback( m_prefix + ":pvalue", pvalue ) ;
 				}
-				callback( m_prefix + ":pvalue", pvalue ) ;
 			}
 		}
 	}
@@ -1318,19 +1321,14 @@ public:
 
 
 namespace bingwa {
-	bingwa::BingwaComputation::UniquePtr bingwa::BingwaComputation::create( std::string const& name, std::vector< std::string > const& cohort_names, appcontext::OptionProcessor const& options ) {
+	bingwa::BingwaComputation::UniquePtr bingwa::BingwaComputation::create(
+		std::string const& name,
+		std::vector< std::string > const& cohort_names,
+		appcontext::OptionProcessor const& options
+	) {
 		bingwa::BingwaComputation::UniquePtr result ;
 		if( name == "MultivariateFixedEffectMetaAnalysis" ) {
 			result.reset( new MultivariateFixedEffectMetaAnalysis( name ) ) ;
-		}
-		else if( name == "PerCohortCountsReporter" ) {
-			bingwa::PerCohortCountsReporter::UniquePtr pcc( new bingwa::PerCohortCountsReporter( cohort_names ) ) ;
-			if( options.check( "-extra-columns" )) {
-				BOOST_FOREACH( std::string const& variable, options.get_values( "-extra-columns" )) {
-					pcc->add_variable( variable ) ;
-				}
-			}
-			result.reset( pcc.release() ) ;	
 		}
 		else if( name == "PerCohortValueReporter" ) {
 			bingwa::PerCohortValueReporter::UniquePtr pcv( new bingwa::PerCohortValueReporter( cohort_names ) ) ;
@@ -1392,10 +1390,7 @@ public:
 			ui_context.logger() << m_cohorts[i].get_summary( "   - " ) ;
 			ui_context.logger() << "\n   - First few SNPs are:\n" ;
 			for( std::size_t snp_i = 0; snp_i < std::min( std::size_t( 5 ), m_cohorts[i].get_number_of_SNPs() ); ++snp_i ) {
-				double info ;
-				double frequency ;
-				m_cohorts[i].get_info( snp_i, &info ) ;
-				ui_context.logger() << "     " << m_cohorts[i].get_SNP( snp_i ) << " (frequency = " << frequency << ", info = " << info << ")\n";
+				ui_context.logger() << "     " << m_cohorts[i].get_SNP( snp_i ) << "\n";
 			}
 		}
 #endif
@@ -1520,6 +1515,8 @@ private:
 			return m_cohorts[i].is_trusted( m_indices[i]->index ) ;
 		}
 	
+		/* Genotype counts are returned as a vector of length 6 in this order:
+		* haploid A, B, diploid AA, AB, BB, NULL call. */
 		void get_counts( std::size_t i, Eigen::VectorXd* result ) const {
 			if( is_non_missing( i ) ) {
 				m_cohorts[i].get_counts( m_indices[i]->index, result ) ;
@@ -1552,16 +1549,6 @@ private:
 		void get_pvalue( std::size_t i, double* result ) const {
 			if( is_non_missing( i ) ) {
 				m_cohorts[i].get_pvalue( m_indices[i]->index, result ) ;
-			}
-		}
-		void get_info( std::size_t i, double* result ) const {
-			if( is_non_missing( i ) ) {
-				m_cohorts[i].get_info( m_indices[i]->index, result ) ;
-			}
-		}
-		void get_maf( std::size_t i, double* result ) const {
-			if( is_non_missing( i ) ) {
-				m_cohorts[i].get_maf( m_indices[i]->index, result ) ;
 			}
 		}
 		void get_variable( std::string const& variable, std::size_t i, std::string* result ) const {
@@ -1793,14 +1780,18 @@ public:
 				cohort_names[i] = "cohort " + genfile::string_utils::to_string( i + 1 ) ;
 			}
 		}
-	
 
 		if( options().check( "-data" ) && options().get_values< std::string >( "-data" ).size() > 0 ) {
 			impl::VariableMap meta_variables ;
 			impl::VariableMap counts_variables ;
 			impl::VariableMap detail_variables ;
 			if( !options().check( "-no-counts" )) {
-				bingwa::BingwaComputation::UniquePtr computation = bingwa::BingwaComputation::create( "PerCohortCountsReporter", cohort_names, options() ) ;
+				bingwa::BingwaComputation::UniquePtr computation(
+					new bingwa::PerCohortCountsReporter(
+						cohort_names,
+						m_cohort_variables
+					)
+				) ;
 				computation->get_variables( boost::bind( impl::insert_into_map< impl::VariableMap >, &counts_variables, _1, _2 ) ) ;
 				m_processor->add_computation( "PerCohortCountsReporter", computation ) ;
 			}
@@ -1954,21 +1945,7 @@ public:
 	}
 	
 	bingwa::BingwaComputation::Filter get_filter( appcontext::OptionProcessor const& options ) const {
-		bingwa::BingwaComputation::Filter filter( &impl::basic_missingness_filter ) ;
-		if( options.check( "-min-info" ) || options.check( "-min-maf" )) {
-			double lower_info_threshhold = NA ;
-			double lower_maf_threshhold = NA ;
-			if( options.check( "-min-info" ) ) {
-				lower_info_threshhold = options.get< double > ( "-min-info" ) ;
-			}
-			if( options.check( "-min-maf" ) ) {
-				lower_maf_threshhold = options.get< double > ( "-min-maf" ) ;
-			}
-			filter = boost::bind(
-				&impl::info_maf_filter, _1, _2,
-				lower_info_threshhold, lower_maf_threshhold
-			) ;
-		}
+		bingwa::BingwaComputation::Filter filter( &impl::basic_trust_filter ) ;
 		return filter ;
 	}
 
@@ -3055,6 +3032,15 @@ public:
 			result->add_variable( column ) ;
 		}
 
+		if( options().check( "-trust-variants-where" )) {
+			std::vector< std::string > const specs = options().get_values< std::string >( "-trust-variants-where" ) ;
+			for( std::size_t i = 0; i < specs.size(); ++i ) {
+				result->add_trust_constraint(
+					statfile::BoundConstraint::parse( specs[i] )
+				) ;
+			}
+		}
+
 		statfile::BuiltInTypeStatSource::UniquePtr source(
 			statfile::BuiltInTypeStatSourceChain::open( filenames )
 		) ;
@@ -3154,6 +3140,7 @@ public:
 					0
 				) ;
 			}
+			m_cohort_variables.push_back( results->list_variables() ) ;
 			m_processor->add_cohort( "cohort_" + to_string( cohort_i+1 ), results ) ;
 		}
 	}
@@ -3374,6 +3361,7 @@ public:
 private:
 	SetOfValueListSets m_value_sets ;
 	BingwaProcessor::UniquePtr m_processor ;
+	std::vector< std::vector< std::string > > m_cohort_variables ;
 } ;
 
 int main( int argc, char **argv ) {

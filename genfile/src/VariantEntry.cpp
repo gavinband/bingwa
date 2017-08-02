@@ -23,6 +23,10 @@ namespace genfile {
 		return *this ;
 	}
 	
+	int VariantEntry::type() const {
+		return m_entrydata.which() ;
+	}
+
 	bool VariantEntry::is_missing() const {
 		return m_entrydata.which() == eMissing ;
 	}

@@ -57,14 +57,9 @@ void FlatFileFrequentistGenomeWideAssociationResults::get_pvalue( std::size_t sn
 void FlatFileFrequentistGenomeWideAssociationResults::get_counts( std::size_t snp_i, Eigen::VectorXd* result ) const {
 	*result = m_sample_counts.row( snp_i ).cast< double >() ;
 }
-void FlatFileFrequentistGenomeWideAssociationResults::get_info( std::size_t snp_i, double* result ) const {
-	*result = m_info( snp_i ) ;
-}
-void FlatFileFrequentistGenomeWideAssociationResults::get_maf( std::size_t snp_i, double* result ) const {
-	*result = m_maf( snp_i ) ;
-}
-void FlatFileFrequentistGenomeWideAssociationResults::get_frequency( std::size_t snp_i, double* result ) const {
-	*result = ( 2.0 * m_sample_counts( snp_i, 2 ) + m_sample_counts( snp_i, 1 ) ) / ( 2.0 * m_sample_counts.row( snp_i ).sum() ) ;
+std::vector< std::string > FlatFileFrequentistGenomeWideAssociationResults::list_variables() const {
+	std::vector< std::string > result( m_variables.begin(), m_variables.end() ) ;
+	return result ;
 }
 void FlatFileFrequentistGenomeWideAssociationResults::get_variable( std::size_t snp_i, std::string const& variable, std::string* value ) const {
 	std::map< std::string, std::vector< std::string > >::const_iterator where = m_extra_variable_storage.find( variable ) ;
@@ -91,8 +86,6 @@ std::string FlatFileFrequentistGenomeWideAssociationResults::get_summary( std::s
 					m_betas.size()
 					+ m_ses.size()
 					+ m_pvalues.size()
-					+ m_info.size()
-					+ m_maf.size()
 					+ m_sample_counts.size()
 				) * sizeof( float )
 				+ mem_used
@@ -114,6 +107,29 @@ std::string FlatFileFrequentistGenomeWideAssociationResults::get_summary( std::s
 #endif
 
 	return str.str() ;
+}
+
+void FlatFileFrequentistGenomeWideAssociationResults::add_variable( std::string const& variable ) {
+	m_variables.insert( variable ) ;
+	/* Make sure we prepare storage. */
+	m_extra_variable_storage[ variable ] ;
+}
+
+void FlatFileFrequentistGenomeWideAssociationResults::add_trust_constraint( statfile::BoundConstraint constraint ) {
+	add_variable( constraint.variable() ) ;
+	m_trust_constraints.push_back( constraint ) ;
+}
+
+bool FlatFileFrequentistGenomeWideAssociationResults::check_if_snp_trusted( std::size_t snp_index ) const {
+	bool result = true ;
+	for( std::size_t constraint_i = 0; constraint_i < m_trust_constraints.size(); ++constraint_i ) {
+		std::string const& variable = m_trust_constraints[constraint_i].variable() ;
+		ExtraVariables::const_iterator where = m_extra_variable_storage.find( variable ) ;
+		assert( where != m_extra_variable_storage.end() ) ;
+		std::string const& value = where->second[ snp_index ] ;
+		result = result && m_trust_constraints[constraint_i].constraint().test( value ) ;
+	}
+	return result ;
 }
 
 FlatFileFrequentistGenomeWideAssociationResults::FlatFileFrequentistGenomeWideAssociationResults():
@@ -171,9 +187,11 @@ void FlatFileFrequentistGenomeWideAssociationResults::setup(
 		}
 
 		m_snps[ snp_index ] = snp ;
-		m_trusted[ snp_index ] = check_if_snp_accepted( snp_index ) ;
-		++snp_index ;
-
+		if( check_if_snp_accepted( snp_index )) {
+			m_trusted[ snp_index ] = check_if_snp_trusted( snp_index ) ;
+			++snp_index ;
+		}
+		
 		if( progress_callback ) {
 			progress_callback( double( source->number_of_rows_read() + 1 ), source->number_of_rows() ) ;
 		}
@@ -269,16 +287,6 @@ void FlatFileFrequentistGenomeWideAssociationResults::resize_storage( Eigen::Mat
 		m_pvalues.swap( pvalues ) ;
 	}
 	{
-		Eigen::VectorXf info = Eigen::VectorXf::Zero( N_snps ) ;
-		info.head( current_N ) = m_info.head( current_N ) ;
-		m_info.swap( info ) ;
-	}
-	{
-		Eigen::VectorXf maf = Eigen::VectorXf::Zero( N_snps ) ;
-		maf.head( current_N ) = m_maf.head( current_N ) ;
-		m_maf.swap( maf ) ;
-	}
-	{
 		Eigen::MatrixXf sample_counts = Eigen::MatrixXf::Zero( N_snps, 6 ) ;
 		if( m_sample_counts.rows() > 0 ) {
 			sample_counts.block( 0, 0, current_N, 6 ) = m_sample_counts.block( 0, 0, current_N, 6 ) ;
@@ -319,14 +327,6 @@ void FlatFileFrequentistGenomeWideAssociationResults::free_unused_memory() {
 	{
 		Eigen::VectorXf pvalues = m_pvalues.head( N_snps ) ;
 		m_pvalues.swap( pvalues ) ;
-	}
-	{
-		Eigen::VectorXf info = m_info.head( N_snps ) ;
-		m_info.swap( info ) ;
-	}
-	{
-		Eigen::VectorXf maf = m_maf.head( N_snps ) ;
-		m_maf.swap( maf ) ;
 	}
 	{
 		Eigen::MatrixXf sample_counts = m_sample_counts.block( 0, 0, N_snps, m_sample_counts.cols() ) ;

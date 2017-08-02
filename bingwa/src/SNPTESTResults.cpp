@@ -22,22 +22,12 @@ namespace bingwa {
 		m_chromosome_hint( chromosome_hint )
 	{}
 
-	void SNPTESTResults::add_variable( std::string const& variable ) {
-		m_variables.insert( variable ) ;
-		/* Make sure we prepare storage. */
-		m_extra_variable_storage[ variable ] ;
-	}
-
 	std::string SNPTESTResults::get_summary( std::string const& prefix, std::size_t target_column ) const {
 		return prefix + "SNPTEST " + FlatFileFrequentistGenomeWideAssociationResults::get_summary( "", target_column ) ;
 	}
 
 	void SNPTESTResults::set_effect_size_column_regex( std::string const& beta_column_regex ) {
 	//	m_beta_column_regex = beta_column_regex ;
-	}
-
-	void SNPTESTResults::set_filter( Filter filter ) {
-		m_filter = filter ;
 	}
 
 	EffectParameterNamePack SNPTESTResults::get_effect_parameter_names() const {
@@ -191,20 +181,6 @@ namespace bingwa {
 			m_pvalue_column = matched_pvalue_column.get().name() ;
 		}
 
-		{
-			regex const info_regex( "(all_)?info" ) ;
-			boost::optional< ColumnSpec > matched_info_column = impl::get_matching_name( column_names, info_regex, true, "info" ) ;
-			if( !matched_info_column ) {
-				throw genfile::BadArgumentError(
-					"SNPTESTResults::setup_columns()",
-					"column_names",
-					( boost::format( "No column matching info regex (\"%s\") could be found." ) % info_regex.str() ).str()
-				) ;
-			}
-			result.push_back( matched_info_column.get() ) ;
-			m_info_column = matched_info_column.get().name() ;
-		}
-		impl::insert_matched( column_names, regex( "all_maf" ), "maf", &result ) ;
 		impl::insert_matched( column_names, regex( "all_AA" ), "counts", &result ) ;
 		impl::insert_matched( column_names, regex( "all_AB" ), "counts", &result ) ;
 		impl::insert_matched( column_names, regex( "all_BB" ), "counts", &result ) ;
@@ -241,10 +217,7 @@ namespace bingwa {
 	}
 
 	bool SNPTESTResults::check_if_snp_accepted( std::size_t i ) const {
-		return
-			( (!m_exclusion_test.get()) || m_exclusion_test->operator()( m_snps[ i ] ) )
-			&& ( (!m_filter) || m_filter( m_info[i], m_maf[i], m_sample_counts.row(i), m_betas.row(i), m_ses.row(i) ) )
-		;
+		return ( (!m_exclusion_test.get()) || m_exclusion_test->operator()( m_snps[ i ] ) ) ;
 	}
 
 	void SNPTESTResults::store_value(
@@ -287,12 +260,6 @@ namespace bingwa {
 		}
 		if( variable == m_pvalue_column ) {
 			m_pvalues( snp_index ) = ( value == "NA" ? NA: to_repr< double >( value ) ) ;
-		}
-		else if( variable == m_info_column ) {
-			m_info( snp_index ) = ( value == "NA" ? NA: to_repr< double >( value ) ) ;
-		}
-		else if( variable == "all_maf" ) {
-			m_maf( snp_index ) = ( value == "NA" ? NA: to_repr< double >( value ) ) ;
 		}
 		else if( variable == "all_A" ) {
 			m_sample_counts( snp_index, 0 ) = ( value == "NA" ? NA: to_repr< double >( value ) ) ;

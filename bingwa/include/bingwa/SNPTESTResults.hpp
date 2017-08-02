@@ -10,6 +10,7 @@
 #include <boost/optional.hpp>
 #include <boost/function.hpp>
 #include "genfile/Chromosome.hpp"
+#include "statfile/FilteringStatSource.hpp"
 #include "FlatFileFrequentistGenomeWideAssociationResults.hpp"
 
 namespace bingwa {
@@ -23,11 +24,8 @@ namespace bingwa {
 
 		void set_effect_size_column_regex( std::string const& beta_column_regex ) ;
 		bingwa::EffectParameterNamePack get_effect_parameter_names() const ;
-		void add_variable( std::string const& variable ) ;
 	
 		std::string get_summary( std::string const& prefix, std::size_t target_column ) const ;
-
-		void set_filter( Filter filter ) ;
 
 	private:
 		genfile::VariantIdentifyingDataTest::UniquePtr m_exclusion_test ;
@@ -38,10 +36,7 @@ namespace bingwa {
 		std::vector< std::string > m_cov_columns ;
 		std::string m_pvalue_column ;
 		std::string m_info_column ;
-		std::set< std::string > m_variables ;
 
-		Filter m_filter ;
-	
 	private:
 		DesiredColumns setup_columns( std::vector< std::string > const& column_names ) ;
 		bool read_snp( statfile::BuiltInTypeStatSource& source, genfile::SNPIdentifyingData& snp ) const ;
