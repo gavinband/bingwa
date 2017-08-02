@@ -1334,18 +1334,7 @@ namespace bingwa {
 		std::vector< std::string > const& cohort_names,
 		appcontext::OptionProcessor const& options
 	) {
-		bingwa::BingwaComputation::UniquePtr result ;
-		if( name == "MultivariateFixedEffectMetaAnalysis" ) {
-			result.reset( new MultivariateFixedEffectMetaAnalysis( name ) ) ;
-		}
-		else if( name == "PerCohortValueReporter" ) {
-			bingwa::PerCohortValueReporter::UniquePtr pcv( new bingwa::PerCohortValueReporter( cohort_names ) ) ;
-			result.reset( pcv.release() ) ;
-		}
-		else {
-			throw genfile::BadArgumentError( "bingwa::BingwaComputation::create()", "name=\"" + name + "\"" ) ;
-		}
-		return result ;
+		assert(0) ;
 	}
 }
 
@@ -1804,7 +1793,12 @@ public:
 				m_processor->add_computation( "PerCohortCountsReporter", computation ) ;
 			}
 			{
-				bingwa::BingwaComputation::UniquePtr computation = bingwa::BingwaComputation::create( "PerCohortValueReporter", cohort_names, options() ) ;
+				bingwa::BingwaComputation::UniquePtr computation(
+					new bingwa::PerCohortValueReporter(
+						cohort_names,
+						m_cohort_constraint_variables
+					)
+				) ;
 				computation->set_effect_parameter_names( m_processor->get_effect_parameter_names() ) ;
 				computation->get_variables( boost::bind( impl::insert_into_map< impl::VariableMap >, &detail_variables, _1, _2 ) ) ;
 				m_processor->add_computation( "PerCohortValueReporter", computation ) ;
@@ -3148,7 +3142,8 @@ public:
 					0
 				) ;
 			}
-			m_cohort_variables.push_back( results->list_variables() ) ;
+			m_cohort_variables.push_back( options().check( "-extra-columns" ) ? options().get_values< std::string >( "-extra-columns" ) : std::vector< std::string >() ) ;
+			m_cohort_constraint_variables.push_back( results->list_trust_constraint_variables() ) ;
 			m_processor->add_cohort( "cohort_" + to_string( cohort_i+1 ), results ) ;
 		}
 	}
@@ -3370,6 +3365,7 @@ private:
 	SetOfValueListSets m_value_sets ;
 	BingwaProcessor::UniquePtr m_processor ;
 	std::vector< std::vector< std::string > > m_cohort_variables ;
+	std::vector< std::vector< std::string > > m_cohort_constraint_variables ;
 } ;
 
 int main( int argc, char **argv ) {

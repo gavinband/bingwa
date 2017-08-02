@@ -42,6 +42,8 @@ namespace bingwa {
 			callback( prefix + "AB", "FLOAT" ) ;
 			callback( prefix + "BB", "FLOAT" ) ;
 			callback( prefix + "NULL", "FLOAT" ) ;
+			callback( prefix + "N", "FLOAT" ) ;
+			callback( prefix + "B_allele_frequency", "FLOAT" ) ;
 			
 			BOOST_FOREACH( std::string const& variable, m_variables[i] ) {
 				callback( prefix + variable, "NULL" ) ;
@@ -73,6 +75,19 @@ namespace bingwa {
 				callback( prefix + "AB", counts(3) ) ;
 				callback( prefix + "BB", counts(4) ) ;
 				callback( prefix + "NULL", counts(5) ) ;
+				callback( prefix + "N", counts.segment(0,5).sum() ) ;
+
+				double B_allele_count = 0 ;
+				double total_allele_count = 0 ;
+				if( counts(0) == counts(0) ) {
+					B_allele_count += counts(1) ;
+					total_allele_count += counts(0) + counts(1) ;
+				}
+				if( counts(2) == counts(2) ) {
+					B_allele_count += counts(3) + 2 * counts(4) ;
+					total_allele_count += 2.0 * ( counts(2) + counts(3) + counts(4) ) ;
+				}
+				callback( prefix + "B_allele_frequency", B_allele_count / total_allele_count ) ;
 
 				{
 					std::string value ;

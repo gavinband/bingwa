@@ -61,6 +61,13 @@ std::vector< std::string > FlatFileFrequentistGenomeWideAssociationResults::list
 	std::vector< std::string > result( m_variables.begin(), m_variables.end() ) ;
 	return result ;
 }
+std::vector< std::string > FlatFileFrequentistGenomeWideAssociationResults::list_trust_constraint_variables() const {
+	std::vector< std::string > result ;
+	for( std::size_t i = 0; i < m_trust_constraints.size(); ++i ) {
+		result.push_back( m_trust_constraints[i].variable() ) ;
+	}
+	return result ;
+}
 void FlatFileFrequentistGenomeWideAssociationResults::get_variable( std::size_t snp_i, std::string const& variable, std::string* value ) const {
 	std::map< std::string, std::vector< std::string > >::const_iterator where = m_extra_variable_storage.find( variable ) ;
 	assert( where != m_extra_variable_storage.end() ) ;

@@ -25,8 +25,10 @@ namespace bingwa {
 			typedef std::auto_ptr< PerCohortValueReporter > UniquePtr ;
 	
 		public:
-			PerCohortValueReporter( std::vector< std::string > const& cohort_names ) ;
-			void add_variable( std::string const& variable ) ;
+			PerCohortValueReporter(
+				std::vector< std::string > const& cohort_names,
+				std::vector< std::vector< std::string > > const& cohort_variables
+			) ;
 			void set_effect_parameter_names( EffectParameterNamePack const& names ) ;
 			void get_variables( boost::function< void ( std::string, std::string ) > callback ) const ;
 
@@ -41,7 +43,7 @@ namespace bingwa {
 
 		private:
 			std::vector< std::string > const m_cohort_names ;
-			std::set< std::string > m_extra_variables ;
+			std::vector< std::vector< std::string > > m_variables ;
 			EffectParameterNamePack m_effect_parameter_names ;
 	} ;
 }
