@@ -48,8 +48,6 @@ namespace bingwa {
 			BOOST_FOREACH( std::string const& variable, m_variables[i] ) {
 				callback( prefix + variable, "NULL" ) ;
 			}
-
-			callback( prefix + "trusted", "INTEGER" ) ;
 		}
 	}
 	
@@ -90,7 +88,6 @@ namespace bingwa {
 					total_allele_count += 2.0 * ( counts(2) + counts(3) + counts(4) ) ;
 				}
 				callback( prefix + "B_allele_frequency", B_allele_count / total_allele_count ) ;
-				callback( prefix + "trusted", genfile::VariantEntry::Integer( data_getter.is_trusted( i ) )) ;
 
 				{
 					std::string value ;

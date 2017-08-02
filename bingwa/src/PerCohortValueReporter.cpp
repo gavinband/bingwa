@@ -49,6 +49,7 @@ namespace bingwa {
 				}
 			}
 			callback( prefix + "pvalue", "FLOAT" ) ;
+			callback( prefix + "trusted", "INTEGER" ) ;
 		}
 	}
 	
@@ -90,6 +91,7 @@ namespace bingwa {
 					assert( index == covariance.size() ) ;
 				}
 				callback( prefix + "pvalue", pvalue ) ;
+				callback( prefix + "trusted", genfile::VariantEntry::Integer( data_getter.is_trusted( i ) )) ;
 			}
 		}
 	}
