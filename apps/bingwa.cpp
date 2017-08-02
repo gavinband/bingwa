@@ -1781,17 +1781,31 @@ public:
 		if( options().check( "-data" ) && options().get_values< std::string >( "-data" ).size() > 0 ) {
 			impl::VariableMap meta_variables ;
 			impl::VariableMap detail_variables ;
+			impl::VariableMap counts_variables ;
+
 			{
 				bingwa::BingwaComputation::UniquePtr computation(
 					new bingwa::PerCohortValueReporter(
 						cohort_names,
-						m_cohort_variables,
-						!options().check( "-no-counts" )
+						m_cohort_constraint_variables,
+						false
 					)
 				) ;
 				computation->set_effect_parameter_names( m_processor->get_effect_parameter_names() ) ;
 				computation->get_variables( boost::bind( impl::insert_into_map< impl::VariableMap >, &detail_variables, _1, _2 ) ) ;
 				m_processor->add_computation( "PerCohortValueReporter", computation ) ;
+			}
+
+			if( !options().check( "-no-counts" )) {
+				bingwa::BingwaComputation::UniquePtr computation(
+					new bingwa::PerCohortCountsReporter(
+						cohort_names,
+						m_cohort_variables
+					)
+				) ;
+				computation->set_effect_parameter_names( m_processor->get_effect_parameter_names() ) ;
+				computation->get_variables( boost::bind( impl::insert_into_map< impl::VariableMap >, &counts_variables, _1, _2 ) ) ;
+				m_processor->add_computation( "PerCohortCountsReporter", computation ) ;
 			}
 			if( options().check( "-no-meta-analysis" )) {
 				// No more computations.
@@ -1903,6 +1917,12 @@ public:
 					storage->add_table(
 						options().get_value( "-table-prefix" ) + "Detail",
 						boost::bind( &impl::contains_variable, detail_variables, _1 )
+					) ;
+				}
+				if( counts_variables.size() > 0 ) {
+					storage->add_table(
+						options().get_value( "-table-prefix" ) + "Counts",
+						boost::bind( &impl::contains_variable, counts_variables, _1 )
 					) ;
 				}
 				if( meta_variables.size() > 0 ) {
