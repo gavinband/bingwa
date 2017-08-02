@@ -1780,23 +1780,13 @@ public:
 
 		if( options().check( "-data" ) && options().get_values< std::string >( "-data" ).size() > 0 ) {
 			impl::VariableMap meta_variables ;
-			impl::VariableMap counts_variables ;
 			impl::VariableMap detail_variables ;
-			if( !options().check( "-no-counts" )) {
-				bingwa::BingwaComputation::UniquePtr computation(
-					new bingwa::PerCohortCountsReporter(
-						cohort_names,
-						m_cohort_variables
-					)
-				) ;
-				computation->get_variables( boost::bind( impl::insert_into_map< impl::VariableMap >, &counts_variables, _1, _2 ) ) ;
-				m_processor->add_computation( "PerCohortCountsReporter", computation ) ;
-			}
 			{
 				bingwa::BingwaComputation::UniquePtr computation(
 					new bingwa::PerCohortValueReporter(
 						cohort_names,
-						m_cohort_constraint_variables
+						m_cohort_variables,
+						!options().check( "-no-counts" )
 					)
 				) ;
 				computation->set_effect_parameter_names( m_processor->get_effect_parameter_names() ) ;
@@ -1908,12 +1898,6 @@ public:
 						) ;
 					}
 					summarise_priors( priors, prior_names, prior_weights, cohort_names ) ;
-				}
-				if( counts_variables.size() > 0 ) {
-					storage->add_table(
-						options().get_value( "-table-prefix" ) + "Counts",
-						boost::bind( &impl::contains_variable, counts_variables, _1 )
-					) ;
 				}
 				if( detail_variables.size() > 0 ) {
 					storage->add_table(

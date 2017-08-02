@@ -20,10 +20,12 @@
 namespace bingwa {
 	PerCohortValueReporter::PerCohortValueReporter(
 		std::vector< std::string > const& cohort_names,
-		std::vector< std::vector< std::string > > const& cohort_variables
+		std::vector< std::vector< std::string > > const& cohort_variables,
+		bool report_counts
 	):
 		m_cohort_names( cohort_names ),
-		m_variables( cohort_variables )
+		m_variables( cohort_variables ),
+		m_report_counts( report_counts )
 	{}
 	
 	void PerCohortValueReporter::set_effect_parameter_names( EffectParameterNamePack const& names ) {
@@ -34,12 +36,25 @@ namespace bingwa {
 		using genfile::string_utils::to_string ;
 		
 		std::size_t const N = m_cohort_names.size() ;
-		for( std::size_t i = 0; i < N; ++i ) {
-			std::string prefix = m_cohort_names[ i ] + ":" ;
+		for( std::size_t cohort = 0; cohort < N; ++cohort ) {
+			std::string prefix = m_cohort_names[ cohort ] + ":" ;
 
-			BOOST_FOREACH( std::string const& variable, m_variables[i] ) {
+			if( m_report_counts ) {
+				callback( prefix + "A", "FLOAT" ) ;
+				callback( prefix + "B", "FLOAT" ) ;
+				callback( prefix + "AA", "FLOAT" ) ;
+				callback( prefix + "AB", "FLOAT" ) ;
+				callback( prefix + "BB", "FLOAT" ) ;
+				callback( prefix + "NULL", "FLOAT" ) ;
+			}
+
+			callback( prefix + "N", "FLOAT" ) ;
+			callback( prefix + "B_allele_frequency", "FLOAT" ) ;
+			
+			BOOST_FOREACH( std::string const& variable, m_variables[cohort] ) {
 				callback( prefix + variable, "NULL" ) ;
 			}
+
 			callback( prefix + "trusted", "INTEGER" ) ;
 
 			for( std::size_t i = 0; i < m_effect_parameter_names.size(); ++i ) {
@@ -54,6 +69,9 @@ namespace bingwa {
 				}
 			}
 			callback( prefix + "pvalue", "FLOAT" ) ;
+			for( std::size_t k = 0; k < m_variables[cohort].size(); ++k ) {
+				callback( prefix + m_variables[cohort][k], "NULL" ) ;
+			}
 		}
 	}
 	
@@ -68,15 +86,50 @@ namespace bingwa {
 				Eigen::VectorXd betas ;
 				Eigen::VectorXd ses ;
 				Eigen::VectorXd covariance ;
+				Eigen::VectorXd counts ;
 				double pvalue ;
 				data_getter.get_betas( i, &betas ) ;
 				data_getter.get_ses( i, &ses ) ;
 				data_getter.get_covariance_upper_triangle( i, &covariance ) ;
 				data_getter.get_pvalue( i, &pvalue ) ;
+				data_getter.get_counts( i, &counts ) ;
 
 				using genfile::string_utils::to_string ;
 				std::string prefix = m_cohort_names[ i ] + ":" ;
 
+				if( m_report_counts ) {
+					callback( prefix + "A", counts(0) ) ;
+					callback( prefix + "B", counts(1) ) ;
+					callback( prefix + "AA", counts(2) ) ;
+					callback( prefix + "AB", counts(3) ) ;
+					callback( prefix + "BB", counts(4) ) ;
+					callback( prefix + "NULL", counts(5) ) ;
+				}
+
+				callback( prefix + "N", counts.segment(0,5).sum() ) ;
+				
+				double B_allele_count = 0 ;
+				double total_allele_count = 0 ;
+				if( counts(0) == counts(0) ) {
+					B_allele_count += counts(1) ;
+					total_allele_count += counts(0) + counts(1) ;
+				}
+				if( counts(2) == counts(2) ) {
+					B_allele_count += counts(3) + 2 * counts(4) ;
+					total_allele_count += 2.0 * ( counts(2) + counts(3) + counts(4) ) ;
+				}
+				callback( prefix + "B_allele_frequency", B_allele_count / total_allele_count ) ;
+
+				{
+					std::string value ;
+					BOOST_FOREACH( std::string const& variable, m_variables[i] ) {
+						data_getter.get_variable( variable, i, &value ) ;
+						callback( prefix + variable, value ) ;
+					}
+				}
+				
+				callback( prefix + "trusted", genfile::VariantEntry::Integer( data_getter.is_trusted( i ) )) ;
+				
 				assert( betas.size() == ses.size() ) ;
 				assert( covariance.size() == ( betas.size() - 1 ) * betas.size() / 2 ) ;
 				for( int j = 0; j < betas.size(); ++j ) {
@@ -96,16 +149,6 @@ namespace bingwa {
 					assert( index == covariance.size() ) ;
 				}
 				callback( prefix + "pvalue", pvalue ) ;
-
-				{
-					std::string value ;
-					BOOST_FOREACH( std::string const& variable, m_variables[i] ) {
-						data_getter.get_variable( variable, i, &value ) ;
-						callback( prefix + variable, value ) ;
-					}
-				}
-
-				callback( prefix + "trusted", genfile::VariantEntry::Integer( data_getter.is_trusted( i ) )) ;
 			}
 		}
 	}
