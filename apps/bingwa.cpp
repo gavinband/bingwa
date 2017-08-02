@@ -3142,7 +3142,7 @@ public:
 					0
 				) ;
 			}
-			m_cohort_variables.push_back( options().check( "-extra-columns" ) ? options().get_values< std::string >( "-extra-columns" ) : std::vector< std::string >() ) ;
+			m_cohort_variables.push_back( results->list_variables() ) ;
 			m_cohort_constraint_variables.push_back( results->list_trust_constraint_variables() ) ;
 			m_processor->add_cohort( "cohort_" + to_string( cohort_i+1 ), results ) ;
 		}
