@@ -37,6 +37,9 @@ namespace bingwa {
 		for( std::size_t i = 0; i < N; ++i ) {
 			std::string prefix = m_cohort_names[ i ] + ":" ;
 
+			callback( prefix + "N", "FLOAT" ) ;
+			callback( prefix + "B_allele_frequency", "FLOAT" ) ;
+
 			for( std::size_t i = 0; i < m_effect_parameter_names.size(); ++i ) {
 //				callback( prefix + "beta_" + to_string( i+1 ) ) ;
 //				callback( prefix + "se_" + to_string( i+1 ) ) ;
@@ -64,7 +67,9 @@ namespace bingwa {
 				Eigen::VectorXd betas ;
 				Eigen::VectorXd ses ;
 				Eigen::VectorXd covariance ;
+				Eigen::VectorXd counts ;
 				double pvalue ;
+				data_getter.get_counts( i, &counts ) ;
 				data_getter.get_betas( i, &betas ) ;
 				data_getter.get_ses( i, &ses ) ;
 				data_getter.get_covariance_upper_triangle( i, &covariance ) ;
@@ -72,6 +77,22 @@ namespace bingwa {
 
 				using genfile::string_utils::to_string ;
 				std::string prefix = m_cohort_names[ i ] + ":" ;
+
+				{
+					double B_allele_count = 0 ;
+					double total_allele_count = 0 ;
+					if( counts(0) == counts(0) ) { // guard against NA values
+						B_allele_count += counts(1) ;
+						total_allele_count += counts(0) + counts(1) ;
+					}
+					if( counts(2) == counts(2) ) { // guard against NA values
+						B_allele_count += counts(3) + 2 * counts(4) ;
+						total_allele_count += 2.0 * ( counts(2) + counts(3) + counts(4) ) ;
+					}
+					callback( prefix + "N", counts.segment(0,5).sum() ) ;
+					callback( prefix + "B_allele_frequency", B_allele_count / total_allele_count ) ;
+				}
+
 				assert( betas.size() == ses.size() ) ;
 				assert( covariance.size() == ( betas.size() - 1 ) * betas.size() / 2 ) ;
 				for( int j = 0; j < betas.size(); ++j ) {
