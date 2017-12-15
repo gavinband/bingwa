@@ -9,6 +9,7 @@ See the website <http://www.well.ox.ac.uk/~gav/bingwa> for more details.
 Compilation involves two steps: configuration and build.
 To configure the package, from the top-level directory run
 > ./waf-1.5.18 configure
+
 To build the package, run
 > ./waf-1.5.18
 
