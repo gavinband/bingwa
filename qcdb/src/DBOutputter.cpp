@@ -249,29 +249,49 @@ namespace qcdb {
 		load_entities() ;
 		m_is_a = get_or_create_entity_internal( "is_a", "is_a relationship" ) ;
 		m_used_by = get_or_create_entity_internal( "used_by", "used_by relationship" ) ;
+		using genfile::string_utils::to_string ;
 
 		try {
 			if( m_analysis_id ) {
-				m_find_analysis_statement
-					->bind( 1, m_analysis_name )
-					.bind( 2, m_analysis_chunk )
+				db::Connection::StatementPtr find_analysis_stmt = m_connection->get_statement(
+					"SELECT name, chunk FROM Analysis WHERE id == ?1"
+				) ;
+				find_analysis_stmt
+					->bind( 1, m_analysis_id.get() )
 					.step() ;
-				if( m_find_analysis_statement->empty() ) {
-					throw genfile::BadArgumentError(
-						"qcdb::DBOutputter::store_metadata()",
-						"m_analysis_id=" + genfile::string_utils::to_string( m_analysis_id.get() ),
-						"Could not find an analysis with the given name and chunk."
+
+				if( find_analysis_stmt->empty() ) {
+					create_analysis(
+						m_analysis_id.get(),
+						m_analysis_name,
+						m_analysis_chunk
 					) ;
+				} else {
+					std::string const existing_analysis_name = find_analysis_stmt->get_column< std::string >(0) ;
+					std::string const existing_analysis_chunk = find_analysis_stmt->get_column< std::string >(1) ;
+					if( existing_analysis_name != m_analysis_name ) {
+						throw genfile::BadArgumentError(
+							"qcdb::DBOutputter::store_metadata()",
+							"m_analysis_id=" + to_string( m_analysis_id.get() ),
+							"Existing analysis has mismatching name (\""
+							+ existing_analysis_name
+							+ "\", exopected \""
+							+ m_analysis_name
+							+ "\")"
+						) ;
+					}
+					if( existing_analysis_chunk != m_analysis_chunk) {
+						throw genfile::BadArgumentError(
+							"qcdb::DBOutputter::store_metadata()",
+							"m_analysis_id=" + to_string( m_analysis_id.get() ),
+							"Existing analysis has mismatching chunk (\""
+							+ existing_analysis_chunk
+							+ "\", exopected \""
+							+ m_analysis_chunk
+							+ "\")"
+						) ;
+					}
 				}
-				db::Connection::RowId const id = m_find_analysis_statement->get< db::Connection::RowId >( 0 ) ;
-				if( id != m_analysis_id.get() ) {
-					throw genfile::BadArgumentError(
-						"qcdb::DBOutputter::store_metadata()",
-						"m_analysis_id=" + genfile::string_utils::to_string( m_analysis_id.get() ),
-						"id does not match the analysis with with the given name and chunk."
-					) ;
-				}
-				m_find_analysis_statement->reset() ;
 			} else {
 				m_analysis_id = create_analysis(
 					m_analysis_name,
@@ -356,6 +376,17 @@ namespace qcdb {
 			create_entity_relationship( result, m_is_a, *class_id ) ;
 		}
 		return result ;
+	}
+
+	void DBOutputter::create_analysis( db::Connection::RowId id, std::string const& name, std::string const& description ) const {
+		db::Connection::StatementPtr insert_analysis_stmt = m_connection->get_statement(
+			"INSERT INTO Analysis( id, name, chunk ) VALUES ( ?, ?, ? )"
+		) ;
+		insert_analysis_stmt
+			->bind( 1, id )
+			.bind( 2, name )
+			.bind( 3, description )
+			.step() ;
 	}
 
 	db::Connection::RowId DBOutputter::create_analysis( std::string const& name, std::string const& description ) const {

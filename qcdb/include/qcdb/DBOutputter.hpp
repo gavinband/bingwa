@@ -109,6 +109,11 @@ namespace qcdb {
 		void store_metadata() ;
 		void load_entities() ;
 		void create_entity_relationship( db::Connection::RowId entity1_id, db::Connection::RowId relationship_id, db::Connection::RowId entity2_id ) const ;
+		void create_analysis(
+			db::Connection::RowId id,
+			std::string const& name,
+			std::string const& description
+		) const ;
 		db::Connection::RowId create_analysis(
 			std::string const& name,
 			std::string const& description

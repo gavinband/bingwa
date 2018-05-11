@@ -230,6 +230,9 @@ struct BingwaOptions: public appcontext::CmdLineOptionProcessor {
 				.set_description( "Specify a name denoting the current genomic region or chunk on which this is run.  This is intended for use in parallel environments." )
 				.set_takes_single_value()
 				.set_default_value( genfile::MissingValue() ) ;
+			options[ "-analysis-id" ]
+				.set_description( "Specify an integer ID for the current analysis." )
+				.set_takes_single_value() ;
 			options[ "-cohort-names" ]
 				.set_description( "Specify a name to label results from this analysis with" )
 				.set_takes_values_until_next_option() ;
@@ -833,34 +836,7 @@ namespace impl {
 /*
 	Univariate fixed-effect meta-analysis
 	Here is R code to do it:
-	frequentist_meta_analysis <- function( betas, ses, side = NULL ) {
-		if( class( betas ) == "numeric" ) {
-			betas = matrix( betas, ncol = length( betas ))
-			ses = matrix( ses, ncol = length( betas ))
-		}
-		v = ses^2 ;
-		betas = betas / v ;
-		denominator_terms = 1 / v;
-		meta_beta = rowSums( betas ) / rowSums( denominator_terms )
-		meta_se = sqrt( 1 / rowSums( denominator_terms ) )
-		if( is.null( side ) ) {
-			pvalue = 2 * pnorm( abs( meta_beta ), mean = 0, sd = meta_se, lower.tail = FALSE  ) ;
-		} else {
-			pvalue = 1 ;
-			if( meta_beta * side > 0 ) {
-				pvalue = pnorm( abs( meta_beta ), mean = 0, sd = meta_se, lower.tail = FALSE )
-			}
-		}
-		return(
-			list(
-				meta_beta = meta_beta,
-				meta_se = meta_se,
-				pvalue = pvalue,
-				side = side
-			)
-		) ;
-	}
-*/
+./wa	*/
 struct MultivariateFixedEffectMetaAnalysis: public bingwa::BingwaComputation {
 	typedef std::auto_ptr< MultivariateFixedEffectMetaAnalysis > UniquePtr ;
 	
@@ -1736,12 +1712,17 @@ public:
 		if( impl::get_output_filetype( options().get< std::string >( "-o" )) == "sqlite" ) {
 			std::vector< std::string > elts = impl::parse_sqlite_filespec( options().get< std::string >( "-o" ) ) ;
 			assert( elts.size() > 0 ) ;
+			boost::optional< db::Connection::RowId > analysis_id ;
+			if( options().check( "-analysis-id" )) {
+				analysis_id = options().get< db::Connection::RowId >( "-analysis-id" ) ;
+			}
 			qcdb::FlatTableDBOutputter::SharedPtr table_storage = qcdb::FlatTableDBOutputter::create_shared(
 				elts[0],
 				options().get< std::string >( "-analysis-name" ),
 				options().get< std::string >( "-analysis-chunk" ),
 				options().get_values_as_map(),
-				options().get< std::string >( "-snp-match-fields" )
+				options().get< std::string >( "-snp-match-fields" ),
+				analysis_id
 			) ;
 			storage = table_storage ;
 			
@@ -1897,7 +1878,7 @@ public:
 						averager->get_variables(
 							boost::bind( impl::insert_into_map< impl::VariableMap >, &meta_variables, _1, _2 )
 						) ;
-					
+						
 						storage->add_meta_table(
 							options().get_value( "-table-prefix" ) + "Prior",
 							"default",
@@ -1905,7 +1886,7 @@ public:
 							boost::bind( &impl::get_model_names, averager->get_models(), _1 ),
 							boost::bind( &impl::get_model_weights, averager->get_models(), _1 )
 						) ;
-					
+						
 						m_processor->add_computation(
 							"Average",
 							bingwa::BingwaComputation::UniquePtr( averager.release() )
