@@ -41,6 +41,7 @@ namespace bingwa {
 			virtual void get_ses( std::size_t i, Eigen::VectorXd* result  ) const = 0 ;
 			virtual void get_covariance_upper_triangle( std::size_t i, Eigen::VectorXd* result  ) const = 0 ;
 			virtual void get_pvalue( std::size_t i, double* result ) const = 0 ;
+			virtual void get_info( std::size_t i, double* result ) const = 0 ;
 			virtual void get_variable( std::string const& variable, std::size_t i, std::string* result ) const = 0 ;
 		} ;
 

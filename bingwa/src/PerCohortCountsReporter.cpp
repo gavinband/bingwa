@@ -35,14 +35,14 @@ namespace bingwa {
 		std::size_t const N = m_cohort_names.size() ;
 		for( std::size_t i = 0; i < N; ++i ) {
 			std::string prefix = m_cohort_names[ i ] + ":" ;
-
+#if 0
 			callback( prefix + "A", "FLOAT" ) ;
 			callback( prefix + "B", "FLOAT" ) ;
 			callback( prefix + "AA", "FLOAT" ) ;
 			callback( prefix + "AB", "FLOAT" ) ;
 			callback( prefix + "BB", "FLOAT" ) ;
 			callback( prefix + "NULL", "FLOAT" ) ;
-			
+#endif
 			BOOST_FOREACH( std::string const& variable, m_variables[i] ) {
 				callback( prefix + variable, "NULL" ) ;
 			}
@@ -61,11 +61,12 @@ namespace bingwa {
 				double info ;
 				double maf ;
 				
+				using genfile::string_utils::to_string ;
+				std::string prefix = m_cohort_names[ i ] + ":" ;
+#if 0
 				data_getter.get_counts( i, &counts ) ;
 
 				assert( counts.size() == 6 ) ;
-				using genfile::string_utils::to_string ;
-				std::string prefix = m_cohort_names[ i ] + ":" ;
 
 				callback( prefix + "A", counts(0) ) ;
 				callback( prefix + "B", counts(1) ) ;
@@ -73,7 +74,7 @@ namespace bingwa {
 				callback( prefix + "AB", counts(3) ) ;
 				callback( prefix + "BB", counts(4) ) ;
 				callback( prefix + "NULL", counts(5) ) ;
-
+#endif
 				{
 					std::string value ;
 					BOOST_FOREACH( std::string const& variable, m_variables[i] ) {

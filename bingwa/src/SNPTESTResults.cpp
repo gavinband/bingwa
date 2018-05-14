@@ -181,6 +181,20 @@ namespace bingwa {
 			m_pvalue_column = matched_pvalue_column.get().name() ;
 		}
 
+		{
+			regex const info_regex( "(all_)?info" ) ;
+			boost::optional< ColumnSpec > matched_info_column = impl::get_matching_name( column_names, info_regex, true, "info" ) ;
+			if( !matched_info_column ) {
+				throw genfile::BadArgumentError(
+					"SNPTESTResults::setup_columns()",
+					"column_names",
+					( boost::format( "No column matching overall info regex (\"%s\") could be found." ) % info_regex.str() ).str()
+				) ;
+			}
+			result.push_back( matched_info_column.get() ) ;
+			m_info_column = matched_info_column.get().name() ;
+		}
+		
 		impl::insert_matched( column_names, regex( "all_AA" ), "counts", &result ) ;
 		impl::insert_matched( column_names, regex( "all_AB" ), "counts", &result ) ;
 		impl::insert_matched( column_names, regex( "all_BB" ), "counts", &result ) ;
@@ -278,6 +292,9 @@ namespace bingwa {
 		}
 		else if( variable == "all_NULL" ) {
 			m_sample_counts( snp_index, 5 ) = ( value == "NA" ? NA: to_repr< double >( value ) ) ;
+		}
+		else if( variable == m_info_column ) {
+			m_info( snp_index ) = ( value == "NA" ? NA: to_repr< double >( value ) ) ;
 		}
 		else if( m_variables.find( variable ) != m_variables.end() ) {
 			m_extra_variable_storage[ variable ][ snp_index ] = value ;

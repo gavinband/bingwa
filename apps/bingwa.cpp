@@ -1540,6 +1540,11 @@ private:
 				m_cohorts[i].get_pvalue( m_indices[i]->index, result ) ;
 			}
 		}
+		void get_info( std::size_t i, double* result ) const {
+			if( is_non_missing( i ) ) {
+				m_cohorts[i].get_info( m_indices[i]->index, result ) ;
+			}
+		}
 		void get_variable( std::string const& variable, std::size_t i, std::string* result ) const {
 			m_cohorts[i].get_variable( m_indices[i]->index, variable, result ) ;
 		}
@@ -1777,23 +1782,23 @@ public:
 
 		if( options().check( "-data" ) && options().get_values< std::string >( "-data" ).size() > 0 ) {
 			impl::VariableMap meta_variables ;
-			impl::VariableMap detail_variables ;
-			impl::VariableMap counts_variables ;
+			impl::VariableMap per_cohort_variables ;
+			impl::VariableMap extra_variables ;
 
 			{
 				bingwa::BingwaComputation::UniquePtr computation(
 					new bingwa::PerCohortValueReporter(
 						cohort_names,
 						m_cohort_constraint_variables,
-						false
+						!options().check( "-no-counts" )
 					)
 				) ;
 				computation->set_effect_parameter_names( m_processor->get_effect_parameter_names() ) ;
-				computation->get_variables( boost::bind( impl::insert_into_map< impl::VariableMap >, &detail_variables, _1, _2 ) ) ;
+				computation->get_variables( boost::bind( impl::insert_into_map< impl::VariableMap >, &per_cohort_variables, _1, _2 ) ) ;
 				m_processor->add_computation( "PerCohortValueReporter", computation ) ;
 			}
 
-			if( !options().check( "-no-counts" )) {
+			if( options().check( "-extra-columns" )) {
 				bingwa::BingwaComputation::UniquePtr computation(
 					new bingwa::PerCohortCountsReporter(
 						cohort_names,
@@ -1801,7 +1806,7 @@ public:
 					)
 				) ;
 				computation->set_effect_parameter_names( m_processor->get_effect_parameter_names() ) ;
-				computation->get_variables( boost::bind( impl::insert_into_map< impl::VariableMap >, &counts_variables, _1, _2 ) ) ;
+				computation->get_variables( boost::bind( impl::insert_into_map< impl::VariableMap >, &extra_variables, _1, _2 ) ) ;
 				m_processor->add_computation( "PerCohortCountsReporter", computation ) ;
 			}
 			if( options().check( "-no-meta-analysis" )) {
@@ -1910,22 +1915,22 @@ public:
 					}
 					summarise_priors( priors, prior_names, prior_weights, cohort_names ) ;
 				}
-				if( detail_variables.size() > 0 ) {
+				if( per_cohort_variables.size() > 0 ) {
 					storage->add_table(
-						options().get_value( "-table-prefix" ) + "Detail",
-						boost::bind( &impl::contains_variable, detail_variables, _1 )
-					) ;
-				}
-				if( counts_variables.size() > 0 ) {
-					storage->add_table(
-						options().get_value( "-table-prefix" ) + "Counts",
-						boost::bind( &impl::contains_variable, counts_variables, _1 )
+						options().get_value( "-table-prefix" ) + "PerCohort",
+						boost::bind( &impl::contains_variable, per_cohort_variables, _1 )
 					) ;
 				}
 				if( meta_variables.size() > 0 ) {
 					storage->add_table(
 						options().get_value( "-table-prefix" ) + "Meta",
 						boost::bind( &impl::contains_variable, meta_variables, _1 )
+					) ;
+				}
+				if( extra_variables.size() > 0 ) {
+					storage->add_table(
+						options().get_value( "-table-prefix" ) + "Extra",
+						boost::bind( &impl::contains_variable, extra_variables, _1 )
 					) ;
 				}
 			}

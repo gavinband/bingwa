@@ -52,6 +52,7 @@ public:
 	virtual void get_ses( std::size_t snp_i, Eigen::VectorXd* result ) const = 0 ; 
 	virtual void get_covariance_upper_triangle( std::size_t snp_i, Eigen::VectorXd* result ) const = 0 ; 
 	virtual void get_pvalue( std::size_t snp_i, double* result ) const = 0 ;
+	virtual void get_info( std::size_t snp_i, double* result ) const = 0 ;
 	virtual void get_counts( std::size_t snp_i, Eigen::VectorXd* result ) const = 0 ;
 	virtual std::vector< std::string > list_variables() const = 0 ; 
 	virtual std::vector< std::string > list_trust_constraint_variables() const = 0 ; 

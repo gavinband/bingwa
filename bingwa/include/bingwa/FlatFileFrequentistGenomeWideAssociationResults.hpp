@@ -45,6 +45,7 @@ public:
 	void get_ses( std::size_t snp_i, Eigen::VectorXd* result ) const ;
 	void get_covariance_upper_triangle( std::size_t snp_i, Eigen::VectorXd* result ) const ; 
 	void get_pvalue( std::size_t snp_i, double* result ) const ;
+	void get_info( std::size_t snp_i, double* result ) const ;
 	/* Get genotype counts, as a vector of length 6 in this order:
 	* haploid A, B, diploid AA, AB, BB, NULL call. */
 	void get_counts( std::size_t snp_i, Eigen::VectorXd* result ) const ;
@@ -124,6 +125,7 @@ protected:
 	Eigen::MatrixXf m_ses ;
 	Eigen::MatrixXf m_covariance ;
 	Eigen::VectorXf m_pvalues ;
+	Eigen::VectorXf m_info ;
 	Eigen::MatrixXf m_sample_counts ;
 	typedef Eigen::MatrixXf::ConstRowXpr Row ;
 	typedef std::map< std::string, std::vector< std::string > > ExtraVariables ;

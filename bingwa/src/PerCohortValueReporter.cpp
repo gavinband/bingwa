@@ -50,6 +50,7 @@ namespace bingwa {
 
 			callback( prefix + "N", "FLOAT" ) ;
 			callback( prefix + "B_allele_frequency", "FLOAT" ) ;
+			callback( prefix + "info", "FLOAT" ) ;
 			
 			BOOST_FOREACH( std::string const& variable, m_variables[cohort] ) {
 				callback( prefix + variable, "NULL" ) ;
@@ -88,10 +89,12 @@ namespace bingwa {
 				Eigen::VectorXd covariance ;
 				Eigen::VectorXd counts ;
 				double pvalue ;
+				double info ;
 				data_getter.get_betas( i, &betas ) ;
 				data_getter.get_ses( i, &ses ) ;
 				data_getter.get_covariance_upper_triangle( i, &covariance ) ;
 				data_getter.get_pvalue( i, &pvalue ) ;
+				data_getter.get_info( i, &info ) ;
 				data_getter.get_counts( i, &counts ) ;
 
 				using genfile::string_utils::to_string ;
@@ -119,6 +122,7 @@ namespace bingwa {
 					total_allele_count += 2.0 * ( counts(2) + counts(3) + counts(4) ) ;
 				}
 				callback( prefix + "B_allele_frequency", B_allele_count / total_allele_count ) ;
+				callback( prefix + "info", info ) ;
 
 				{
 					std::string value ;

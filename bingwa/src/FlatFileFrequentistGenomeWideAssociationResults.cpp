@@ -54,6 +54,9 @@ void FlatFileFrequentistGenomeWideAssociationResults::get_covariance_upper_trian
 void FlatFileFrequentistGenomeWideAssociationResults::get_pvalue( std::size_t snp_i, double* result ) const {
 	*result = m_pvalues( snp_i ) ;
 }
+void FlatFileFrequentistGenomeWideAssociationResults::get_info( std::size_t snp_i, double* result ) const {
+	*result = m_info( snp_i ) ;
+}
 void FlatFileFrequentistGenomeWideAssociationResults::get_counts( std::size_t snp_i, Eigen::VectorXd* result ) const {
 	*result = m_sample_counts.row( snp_i ).cast< double >() ;
 }
@@ -93,6 +96,7 @@ std::string FlatFileFrequentistGenomeWideAssociationResults::get_summary( std::s
 					m_betas.size()
 					+ m_ses.size()
 					+ m_pvalues.size()
+					+ m_info.size()
 					+ m_sample_counts.size()
 				) * sizeof( float )
 				+ mem_used
@@ -294,6 +298,11 @@ void FlatFileFrequentistGenomeWideAssociationResults::resize_storage( Eigen::Mat
 		m_pvalues.swap( pvalues ) ;
 	}
 	{
+		Eigen::VectorXf info = Eigen::VectorXf::Zero( N_snps ) ;
+		info.head( current_N ) = m_info.head( current_N ) ;
+		m_info.swap( info ) ;
+	}
+	{
 		Eigen::MatrixXf sample_counts = Eigen::MatrixXf::Zero( N_snps, 6 ) ;
 		if( m_sample_counts.rows() > 0 ) {
 			sample_counts.block( 0, 0, current_N, 6 ) = m_sample_counts.block( 0, 0, current_N, 6 ) ;
@@ -334,6 +343,10 @@ void FlatFileFrequentistGenomeWideAssociationResults::free_unused_memory() {
 	{
 		Eigen::VectorXf pvalues = m_pvalues.head( N_snps ) ;
 		m_pvalues.swap( pvalues ) ;
+	}
+	{
+		Eigen::VectorXf info = m_info.head( N_snps ) ;
+		m_info.swap( info ) ;
 	}
 	{
 		Eigen::MatrixXf sample_counts = m_sample_counts.block( 0, 0, N_snps, m_sample_counts.cols() ) ;
