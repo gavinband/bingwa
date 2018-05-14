@@ -201,6 +201,15 @@ namespace bingwa {
 		impl::insert_if_matched( column_names, regex( "all_A" ), "counts", &result ) ;
 		impl::insert_if_matched( column_names, regex( "all_B" ), "counts", &result ) ;
 		impl::insert_matched( column_names, regex( "all_NULL" ), "counts", &result ) ;
+
+		// Remove anything specific from extra variables.
+		for( std::size_t i = 0; i < result.size(); ++i ) {
+			std::set< std::string >::iterator where = m_variables.find( result[i].name() ) ;
+			if( where != m_variables.end() ) {
+				m_variables.erase( where ) ;
+			}
+		}
+
 		impl::insert_if_matched( column_names, regex( "cases_AA" ), "extra", &result ) ;
 		impl::insert_if_matched( column_names, regex( "cases_AB" ), "extra", &result ) ;
 		impl::insert_if_matched( column_names, regex( "cases_BB" ), "extra", &result ) ;
@@ -294,10 +303,45 @@ namespace bingwa {
 			m_sample_counts( snp_index, 5 ) = ( value == "NA" ? NA: to_repr< double >( value ) ) ;
 		}
 		else if( variable == m_info_column ) {
+			std::cerr << "STORING info value: " << value << ".\n" ;
 			m_info( snp_index ) = ( value == "NA" ? NA: to_repr< double >( value ) ) ;
 		}
 		else if( m_variables.find( variable ) != m_variables.end() ) {
 			m_extra_variable_storage[ variable ][ snp_index ] = value ;
 		}
 	}
+	
+	genfile::VariantEntry SNPTESTResults::get_value( std::size_t snp_index, std::string const& variable ) const {
+		std::cerr << "Getting: \"" << variable << "\"...\n" ;
+		if( variable == m_pvalue_column ) {
+			return m_pvalues( snp_index ) ;
+		}
+		else if( variable == "all_A" ) {
+			return m_sample_counts( snp_index, 0 ) ;
+		}
+		else if( variable == "all_B" ) {
+			return m_sample_counts( snp_index, 1 ) ;
+		}
+		else if( variable == "all_AA" ) {
+			return m_sample_counts( snp_index, 2 ) ;
+		}
+		else if( variable == "all_AB" ) {
+			return m_sample_counts( snp_index, 3 ) ;
+		}
+		else if( variable == "all_BB" ) {
+			return m_sample_counts( snp_index, 4 ) ;
+		}
+		else if( variable == "all_NULL" ) {
+			return m_sample_counts( snp_index, 5 ) ;
+		}
+		else if( variable == m_info_column ) {
+			return m_info( snp_index ) ;
+		}
+		else {
+			ExtraVariables::const_iterator where = m_extra_variable_storage.find( variable ) ;
+			assert( where != m_extra_variable_storage.end() ) ;
+			return where->second[ snp_index ] ;
+		}
+	}
+	
 }

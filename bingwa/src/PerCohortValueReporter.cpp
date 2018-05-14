@@ -26,7 +26,28 @@ namespace bingwa {
 		m_cohort_names( cohort_names ),
 		m_variables( cohort_variables ),
 		m_report_counts( report_counts )
-	{}
+	{
+		std::vector< std::string > defaults ;
+		defaults.push_back( "A" ) ;
+		defaults.push_back( "B" ) ;
+		defaults.push_back( "AA" ) ;
+		defaults.push_back( "AB" ) ;
+		defaults.push_back( "BB" ) ;
+		defaults.push_back( "NULL" ) ;
+		defaults.push_back( "N" ) ;
+		defaults.push_back( "B_allele_frequency" ) ;
+		defaults.push_back( "info" ) ;
+		defaults.push_back( "trusted" ) ;
+		defaults.push_back( "pvalue" ) ;
+		for( std::size_t cohort = 0; cohort < m_variables.size(); ++cohort ) {
+			for( std::size_t j = 0; j < defaults.size(); ++j ) {
+				std::vector< std::string >::iterator where = std::find( m_variables[cohort].begin(), m_variables[cohort].end(), defaults[j] ) ;
+				if( where != m_variables[cohort].end() ) {
+					m_variables[cohort].erase( where ) ;
+				}
+			}
+		}
+	}
 	
 	void PerCohortValueReporter::set_effect_parameter_names( EffectParameterNamePack const& names ) {
 		m_effect_parameter_names = names ;
@@ -123,7 +144,7 @@ namespace bingwa {
 				}
 				callback( prefix + "B_allele_frequency", B_allele_count / total_allele_count ) ;
 				callback( prefix + "info", info ) ;
-
+				std::cerr << "Output info = " << info << ".\n" ;
 				{
 					std::string value ;
 					BOOST_FOREACH( std::string const& variable, m_variables[i] ) {

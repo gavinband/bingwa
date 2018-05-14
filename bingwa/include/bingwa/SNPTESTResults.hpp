@@ -27,6 +27,8 @@ namespace bingwa {
 	
 		std::string get_summary( std::string const& prefix, std::size_t target_column ) const ;
 
+		genfile::VariantEntry get_value( std::size_t snp_i, std::string const& variable ) const ;
+
 	private:
 		genfile::VariantIdentifyingDataTest::UniquePtr m_exclusion_test ;
 		std::string m_beta_column_regex ;

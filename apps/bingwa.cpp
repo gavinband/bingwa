@@ -1928,6 +1928,10 @@ public:
 					) ;
 				}
 				if( extra_variables.size() > 0 ) {
+					std::cerr << "Extra variables are:\n" ;
+					for( impl::VariableMap::const_iterator j = extra_variables.begin(); j != extra_variables.end(); ++j ) {
+						std::cerr << "\"" << j->first << "\" -> \"" << j->second << "\".\n" ;
+					}
 					storage->add_table(
 						options().get_value( "-table-prefix" ) + "Extra",
 						boost::bind( &impl::contains_variable, extra_variables, _1 )

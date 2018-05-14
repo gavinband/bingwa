@@ -49,12 +49,14 @@ public:
 	/* Get genotype counts, as a vector of length 6 in this order:
 	* haploid A, B, diploid AA, AB, BB, NULL call. */
 	void get_counts( std::size_t snp_i, Eigen::VectorXd* result ) const ;
+	virtual genfile::VariantEntry get_value( std::size_t snp_i, std::string const& variable ) const = 0 ;
 
 	/* Get values for user-specified or otherwise required / requested variables */
 	std::vector< std::string > list_variables() const ;
 	std::vector< std::string > list_trust_constraint_variables() const ;
 	void get_variable( std::size_t snp_i, std::string const& variable, std::string* value ) const ;
 	std::string get_summary( std::string const& prefix, std::size_t target_column ) const ;
+
 
 public:
 	struct ColumnSpec {

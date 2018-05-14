@@ -121,6 +121,14 @@ std::string FlatFileFrequentistGenomeWideAssociationResults::get_summary( std::s
 }
 
 void FlatFileFrequentistGenomeWideAssociationResults::add_variable( std::string const& variable ) {
+	/* Don't do anything if variable is already added */
+	std::cerr << "Adding variable \"" << variable << ".\n" ;
+	for( std::size_t i = 0; i < m_desired_columns.size(); ++i ) {
+		std::cerr << "Comparing \"" << variable << "\" to \"" << m_desired_columns[i].name() << "\".\n" ;
+		if( variable == m_desired_columns[i].name() ) {
+			return ;
+		}
+	}
 	m_variables.insert( variable ) ;
 	/* Make sure we prepare storage. */
 	m_extra_variable_storage[ variable ] ;
@@ -135,10 +143,7 @@ bool FlatFileFrequentistGenomeWideAssociationResults::check_if_snp_trusted( std:
 	bool result = true ;
 	for( std::size_t constraint_i = 0; constraint_i < m_trust_constraints.size(); ++constraint_i ) {
 		std::string const& variable = m_trust_constraints[constraint_i].variable() ;
-		ExtraVariables::const_iterator where = m_extra_variable_storage.find( variable ) ;
-		assert( where != m_extra_variable_storage.end() ) ;
-		std::string const& value = where->second[ snp_index ] ;
-		result = result && m_trust_constraints[constraint_i].constraint().test( value ) ;
+		result = result && m_trust_constraints[constraint_i].constraint().test( get_value( snp_index, variable ) ) ;
 	}
 	return result ;
 }

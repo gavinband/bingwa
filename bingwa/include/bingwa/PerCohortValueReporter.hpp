@@ -44,7 +44,7 @@ namespace bingwa {
 
 		private:
 			std::vector< std::string > const m_cohort_names ;
-			std::vector< std::vector< std::string > > const m_variables ;
+			std::vector< std::vector< std::string > > m_variables ;
 			bool const m_report_counts ;
 			EffectParameterNamePack m_effect_parameter_names ;
 	} ;

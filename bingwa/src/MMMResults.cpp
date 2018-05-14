@@ -133,4 +133,30 @@ namespace bingwa {
 			m_sample_counts( snp_index, 5 ) = ( value == "NA" ? NA: to_repr< double >( value ) ) ;
 		}
 	}
+	
+	genfile::VariantEntry MMMResults::get_value( std::size_t snp_index, std::string const& variable ) const {
+		if( variable == m_effect_column_regex ) {
+			return m_betas( snp_index, 0 ) ;
+		}
+		else if( variable == m_se_column_regex ) {
+			return m_ses( snp_index, 0 ) ;
+		}
+		else if( variable == "pval" ) {
+			return m_pvalues( snp_index ) ;
+		}
+		else if( variable == "gen_00" ) {
+			return m_sample_counts( snp_index, 2 ) ;
+		}
+		else if( variable == "gen_01" ) {
+			return m_sample_counts( snp_index, 3 ) ;
+		}
+		else if( variable == "gen_11" ) {
+			return m_sample_counts( snp_index, 4 ) ;
+		}
+		else if( variable == "gen_NULL" ) {
+			return m_sample_counts( snp_index, 5 ) ;
+		} else {
+			assert(0) ;
+		}
+	}
 }

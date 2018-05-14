@@ -25,6 +25,8 @@ namespace bingwa {
 		int get_number_of_effect_parameters() const ;
 		bingwa::EffectParameterNamePack get_effect_parameter_names() const ;
 
+		genfile::VariantEntry get_value( std::size_t snp_i, std::string const& variable ) const ;
+
 	private:
 		genfile::VariantIdentifyingDataTest::UniquePtr m_exclusion_test ;
 		std::string m_effect_column_regex ;
