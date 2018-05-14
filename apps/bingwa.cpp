@@ -257,6 +257,13 @@ struct BingwaOptions: public appcontext::CmdLineOptionProcessor {
 				.set_description( "Don't output per-cohort allele or genotype counts." ) ;
 			options[ "-output-all-variants" ]
 				.set_description( "Output all variants, even those where there is no trustworthy data" ) ;
+			options[ "-rename-parameters" ]
+				.set_description( "Specify the name of a file containing updated names for parameters. "
+					"This file should have at least two named columns; the first column should contain"
+					" the original name of each parameter; the second column should contain the name is it should"
+					" appear in the output file." )
+				.set_takes_single_value() ;
+					
 		}
 		{
 			options.declare_group( "Bayesian analysis options" ) ;
@@ -311,8 +318,7 @@ struct BingwaOptions: public appcontext::CmdLineOptionProcessor {
 
 			options[ "-per-cohort-prior" ]
 				.set_description( "Specify a prior model to use when computing bayes factor in each population.\n" )
-				.set_takes_single_value()
-				.set_default_value( "sd=0.2/cor=1" ) ;
+				.set_takes_single_value() ;
 
 			options[ "-prior-weights" ]
 				.set_description( "Specify prior weights for each model. Each argument must be of the form"
@@ -859,6 +865,11 @@ struct MultivariateFixedEffectMetaAnalysis: public bingwa::BingwaComputation {
 	void get_variables( boost::function< void ( std::string, std::string ) > callback ) const {
 		std::size_t const numberOfEffects = m_effect_parameter_names.size() ;
 		callback( m_prefix + ":included_betas", "TEXT" ) ;
+		callback( m_prefix + ":A", "FLOAT" ) ;
+		callback( m_prefix + ":B", "FLOAT" ) ;
+		callback( m_prefix + ":AA", "FLOAT" ) ;
+		callback( m_prefix + ":AB", "FLOAT" ) ;
+		callback( m_prefix + ":BB", "FLOAT" ) ;
 		callback( m_prefix + ":N", "FLOAT" ) ;
 		if( numberOfEffects > 0 ) {
 			for( std::size_t i = 0; i < numberOfEffects; ++i ) {
@@ -900,6 +911,11 @@ struct MultivariateFixedEffectMetaAnalysis: public bingwa::BingwaComputation {
 		) {
 			impl::get_total_counts( data_getter, m_filter, counts ) ;
 			callback( m_prefix + ":included_betas", impl::to_01_string( non_missingness ) ) ;
+			callback( m_prefix + ":A", counts(0) ) ;
+			callback( m_prefix + ":B", counts(1) ) ;
+			callback( m_prefix + ":AA", counts(2) ) ;
+			callback( m_prefix + ":AB", counts(3) ) ;
+			callback( m_prefix + ":BB", counts(4) ) ;
 			callback( m_prefix + ":N", counts.segment( 0, 5 ).sum() ) ;
 
 			if( non_missingness.sum() > 0 ) {
@@ -1717,7 +1733,7 @@ public:
 				analysis_id = options().get< db::Connection::RowId >( "-analysis-id" ) ;
 			}
 			qcdb::FlatTableDBOutputter::SharedPtr table_storage = qcdb::FlatTableDBOutputter::create_shared(
-				elts[0],
+				"file:" + elts[0] + "?nolock=1",
 				options().get< std::string >( "-analysis-name" ),
 				options().get< std::string >( "-analysis-chunk" ),
 				options().get_values_as_map(),
@@ -1808,8 +1824,8 @@ public:
 				}
 
 				// Per-cohort priors...
-				{
-					Priors const priors = get_per_cohort_priors( options() ) ;
+				if( options().check( "-per-cohort-prior" )) {
+					Priors const priors = get_per_cohort_priors( options().get< std::string >( "-per-cohort-prior" ) ) ;
 					PerCohortBayesFactor::UniquePtr bf(
 						new PerCohortBayesFactor(
 							cohort_names,
@@ -2569,10 +2585,9 @@ public:
 		return result ;
 	}
 
-	Priors get_per_cohort_priors( appcontext::OptionProcessor const& options ) {
+	Priors get_per_cohort_priors( std::string model_spec ) {
 		using genfile::string_utils::to_string ;
 		Priors result ;
-		std::string const& model_spec = options.get< std::string >( "-per-cohort-prior" ) ;
 		std::vector< CovarianceSpec > const covariance_specs = parse_covariance_spec( model_spec, m_value_sets ) ;
 
 		int const D = m_processor->get_number_of_effect_parameters() ;
@@ -3066,70 +3081,129 @@ public:
 		ResultCallback ;
 
 	void load_data() {
+		std::vector< std::string > cohort_files = options().get_values< std::string >( "-data" ) ;
+		for( std::size_t cohort_i = 0; cohort_i < cohort_files.size(); ++cohort_i ) {
+			load_data_for_cohort( cohort_i, cohort_files ) ;
+		}
+	}
+	
+	void load_data_for_cohort( std::size_t cohort_i, std::vector< std::string > const& cohort_files ) {
 		using genfile::string_utils::to_string ;
 		using genfile::string_utils::join ;
 
-		std::vector< std::string > cohort_files = options().get_values< std::string >( "-data" ) ;
-		for( std::size_t cohort_i = 0; cohort_i < cohort_files.size(); ++cohort_i ) {
-			UIContext::ProgressContext progress_context = get_ui_context().get_progress_context( "Loading scan results \"" + cohort_files[cohort_i] + "\"" ) ;
+		UIContext::ProgressContext progress_context = get_ui_context().get_progress_context( "Loading scan results \"" + cohort_files[cohort_i] + "\"" ) ;
 
-			genfile::VariantIdentifyingDataTestConjunction::UniquePtr test( new genfile::VariantIdentifyingDataTestConjunction() ) ;
+		genfile::VariantIdentifyingDataTestConjunction::UniquePtr test( new genfile::VariantIdentifyingDataTestConjunction() ) ;
 
-			if( options().check_if_option_was_supplied_in_group( "SNP inclusion / exclusion options" ) ) {
-				genfile::CommonSNPFilter::UniquePtr snp_filter = get_snp_exclusion_filter( cohort_i ) ;
-				if( snp_filter.get() ) {
-					test->add_subtest( genfile::VariantIdentifyingDataTest::UniquePtr( snp_filter.release() ) ) ;
-				}
+		if( options().check_if_option_was_supplied_in_group( "SNP inclusion / exclusion options" ) ) {
+			genfile::CommonSNPFilter::UniquePtr snp_filter = get_snp_exclusion_filter( cohort_i ) ;
+			if( snp_filter.get() ) {
+				test->add_subtest( genfile::VariantIdentifyingDataTest::UniquePtr( snp_filter.release() ) ) ;
 			}
+		}
 
-			boost::optional< std::string > effect_size_column_regex ;
-			if( options().check( "-effect-size-column-regex" ) ) {
-				std::vector< std::string > values = options().get_values< std::string >( "-effect-size-column-regex" ) ;
-				if( values.size() != cohort_files.size() ) {
-					throw genfile::BadArgumentError(
-						"BingwaApplication::load_data()",
-						"-effect-size-column-regex=\"" + to_string( genfile::string_utils::join( values, " " ) ) + "\"",
-						"Expected " + to_string( cohort_files.size() ) + " values but found " + to_string( values.size() ) + "."
-					) ;
-				}
-				effect_size_column_regex = values[ cohort_i ] ;
-			}
-
-			boost::optional< genfile::Chromosome > chromosome_hint ;
-			if( options().check( "-assume-chromosome" ) ) {
-				chromosome_hint = genfile::Chromosome( options().get< std::string >( "-assume-chromosome" ) ) ;
-			}
-			FrequentistGenomeWideAssociationResults::UniquePtr results = create_cohort(
-				genfile::wildcard::find_files_by_chromosome( cohort_files[cohort_i] ),
-				effect_size_column_regex,
-				options().check( "-extra-columns" ) ? options().get_values< std::string >( "-extra-columns" ) : std::vector< std::string >(),
-				genfile::VariantIdentifyingDataTest::UniquePtr( test.release() ),
-				chromosome_hint,
-				bingwa::SNPTESTResults::SNPResultCallback(),
-				progress_context
-			) ;
-			
-			// summarise right now so as to see memory used.
-			get_ui_context().logger() << "Cohort " << (cohort_i+1) << " summary: " << results->get_summary() << ".\n" ;
-			
-			if( cohort_i == 0 ) {
-				m_processor->set_effect_parameter_names( results->get_effect_parameter_names() ) ;
-			}
-			else if( results->get_effect_parameter_names() != m_processor->get_effect_parameter_names() ) {
-				throw genfile::MalformedInputError(
-					cohort_files[ cohort_i ],
-					"Names of effect parameters in cohort " + to_string( cohort_i+1 )
-						+ " ("
-						+ results->get_effect_parameter_names().get_summary()
-						+ ") do not match that in cohort 1 ("
-						+ m_processor->get_effect_parameter_names().get_summary()
-						+ ")",
-					0
+		boost::optional< std::string > effect_size_column_regex ;
+		if( options().check( "-effect-size-column-regex" ) ) {
+			std::vector< std::string > values = options().get_values< std::string >( "-effect-size-column-regex" ) ;
+			if( values.size() != cohort_files.size() ) {
+				throw genfile::BadArgumentError(
+					"BingwaApplication::load_data()",
+					"-effect-size-column-regex=\"" + to_string( genfile::string_utils::join( values, " " ) ) + "\"",
+					"Expected " + to_string( cohort_files.size() ) + " values but found " + to_string( values.size() ) + "."
 				) ;
 			}
-			m_cohort_variables.push_back( results->list_variables() ) ;
-			m_cohort_constraint_variables.push_back( results->list_trust_constraint_variables() ) ;
-			m_processor->add_cohort( "cohort_" + to_string( cohort_i+1 ), results ) ;
+			effect_size_column_regex = values[ cohort_i ] ;
+		}
+
+		boost::optional< genfile::Chromosome > chromosome_hint ;
+		if( options().check( "-assume-chromosome" ) ) {
+			chromosome_hint = genfile::Chromosome( options().get< std::string >( "-assume-chromosome" ) ) ;
+		}
+		FrequentistGenomeWideAssociationResults::UniquePtr results = create_cohort(
+			genfile::wildcard::find_files_by_chromosome( cohort_files[cohort_i] ),
+			effect_size_column_regex,
+			options().check( "-extra-columns" ) ? options().get_values< std::string >( "-extra-columns" ) : std::vector< std::string >(),
+			genfile::VariantIdentifyingDataTest::UniquePtr( test.release() ),
+			chromosome_hint,
+			bingwa::SNPTESTResults::SNPResultCallback(),
+			progress_context
+		) ;
+		
+		// summarise right now so as to see memory used.
+		get_ui_context().logger() << "Cohort " << (cohort_i+1) << " summary: " << results->get_summary() << ".\n" ;
+		
+		bingwa::EffectParameterNamePack parameters = results->get_effect_parameter_names() ;
+		if( options().check( "-rename-parameters" )) {
+			rename_parameters(
+				options().get< std::string >( "-rename-parameters" ),
+				&parameters
+			) ;
+		}
+
+		if( cohort_i == 0 ) {
+			m_processor->set_effect_parameter_names( parameters ) ;
+		}
+		else if( parameters != m_processor->get_effect_parameter_names() ) {
+			throw genfile::MalformedInputError(
+				cohort_files[ cohort_i ],
+				"Names of effect parameters in cohort " + to_string( cohort_i+1 )
+					+ " ("
+					+ results->get_effect_parameter_names().get_summary()
+					+ ") do not match that in cohort 1 ("
+					+ m_processor->get_effect_parameter_names().get_summary()
+					+ ")",
+				0
+			) ;
+		}
+		m_cohort_variables.push_back( results->list_variables() ) ;
+		m_cohort_constraint_variables.push_back( results->list_trust_constraint_variables() ) ;
+		m_processor->add_cohort( "cohort_" + to_string( cohort_i+1 ), results ) ;
+	}
+	
+	void rename_parameters(
+		std::string const& renameFile,
+		bingwa::EffectParameterNamePack* parameters
+	) const {
+		statfile::BuiltInTypeStatSource::UniquePtr renames = statfile::BuiltInTypeStatSource::open( renameFile ) ;
+		if( renames->number_of_columns() < 2 ) {
+			throw genfile::MalformedInputError(
+				renameFile,
+				"Expected a two-column file.",
+				0
+			) ;
+		}
+
+#if DEBUG
+		for( std::size_t i = 0; i < parameters->size(); ++i ) {
+			std::cerr << "PARAMETER: \"" + parameters->parameter_name(i) << "\", se = \"" + parameters->se_name(i) << ".\n" ;
+		}
+#endif
+		std::string key, value ;
+		using genfile::string_utils::slice ;
+		while( (*renames) >> key >> value ) {
+			
+			std::size_t const where = parameters->find( key ) ;
+			if( where != bingwa::EffectParameterNamePack::npos ) {
+				std::vector< slice > elts = slice( value ).split( ":" ) ;
+				assert( elts.size() == 2 ) ;
+				std::vector< slice > bits = elts[0].split( "_" ) ;
+				assert( bits.size() == 2 ) ;
+				int index = genfile::string_utils::to_repr< int > ( bits[1] ) ;
+				parameters->rename(
+					where,
+					bits[0],
+					bits[1],
+					elts[1]
+				) ;
+
+#if DEBUG
+				std::cerr << "After replacing \"" << key << "\":\n" ;
+				for( std::size_t i = 0; i < parameters->size(); ++i ) {
+					std::cerr << "PARAMETER: \"" + parameters->parameter_name(i) << "\", se = \"" + parameters->se_name(i) << ".\n" ;
+				}
+#endif
+			}
+			(*renames) >> statfile::ignore_all() ;
 		}
 	}
 	

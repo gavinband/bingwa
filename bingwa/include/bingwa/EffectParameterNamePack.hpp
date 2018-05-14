@@ -13,6 +13,7 @@
 namespace bingwa {
 	struct EffectParameterNamePack {
 	public:
+		static std::size_t const npos = std::string::npos ;
 		EffectParameterNamePack() ;
 		EffectParameterNamePack(
 			std::vector< std::string > betas,
@@ -24,11 +25,15 @@ namespace bingwa {
 		EffectParameterNamePack& operator=( EffectParameterNamePack const& other ) ;
 
 		std::size_t size() const ;
+		std::size_t find( std::string const& ) const ;
 		std::string parameter_name( std::size_t i ) const ;
 		std::string se_name( std::size_t i ) const ;
 		std::string wald_pvalue_name( std::size_t i ) const ;
 		std::string covariance_name( std::size_t i, std::size_t j ) const ;
 	
+		/* rename a parameter, e.g. as beta_1:add, se_1 */
+		void rename( std::size_t parameter_i, std::string const& newName, std::string const& newNumber, std::string const& identifier ) ;
+
 		bool operator==( EffectParameterNamePack const& other ) const ;
 		bool operator!=( EffectParameterNamePack const& other ) const ;
 	
@@ -38,6 +43,8 @@ namespace bingwa {
 		std::vector< std::string > m_betas ;
 		std::vector< std::string > m_ses ;
 		std::vector< std::string > m_cov ;
+		
+		std::size_t get_index_of_covariance( std::size_t i, std::size_t j ) const ;
 	} ;
 }
 

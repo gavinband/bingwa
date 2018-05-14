@@ -1,0 +1,5 @@
+oldName	newName
+beta_1:add/bin2=1	theta_5:add
+beta_1:add/bin2=1	theta_6:gen
+beta_3:het	alpha_2:het
+beta_1:add	alpha_1:add
