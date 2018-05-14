@@ -5,7 +5,7 @@ import Options
 
 srcdir="."
 APPNAME = "bingwa"
-VERSION = "0.9-dev"
+VERSION = "1.0-dev"
 
 subdirs = [
 	'genfile', 'statfile', 'appcontext',
@@ -32,6 +32,10 @@ def configure( conf ):
 
 	import platform
 	
+	cxxflags = conf.env[ 'CXXFLAGS' ] 
+	linkflags = conf.env[ 'LINKFLAGS' ]
+	cxxflags.append( '-std=c++98' )
+
 	platform_specific_configure( conf )
 	check_for_3rd_party_components( conf )
 	misc_configure( conf )
@@ -39,18 +43,21 @@ def configure( conf ):
 	if Options.options.static and platform.system() != "Darwin":
 		conf.env.SHLIB_MARKER='-Wl,-Bstatic'
 	create_variant( conf, 'release' )
-	configure_variant( conf, 'default', get_cxx_flags( 'default' ), get_ld_flags( 'default' ))
-	configure_variant( conf, 'release', get_cxx_flags( 'release' ), get_ld_flags( 'release' ))
+	configure_variant( conf, 'default', cxxflags, linkflags )
+	configure_variant( conf, 'release', cxxflags, linkflags )
 
 def create_variant( conf, variant_name ):
 	variant = conf.env.copy()
 	conf.set_env_name( variant_name, variant )
 	variant.set_variant( variant_name )
 
-def configure_variant( conf, variant_name, cxxflags, ldflags ):
+def configure_variant( conf, variant_name, cxxflags = [], linkflags = [] ):
+	cxxflags.extend( get_cxxflags( variant_name ))
+	linkflags.extend( get_linkflags( variant_name ))
+
 	conf.setenv( variant_name )
 	conf.env[ 'CXXFLAGS' ] = cxxflags
-	conf.env[ 'LINKFLAGS' ] = ldflags
+	conf.env[ 'LINKFLAGS' ] = linkflags
 	conf.write_config_header( 'config.hpp' )
 	conf.write_config_header( 'genfile/config.hpp' )
 
@@ -65,12 +72,6 @@ def check_for_3rd_party_components( conf ):
 		conf.define( 'HAVE_RT', 1 )
 	if conf.check_cxx( lib = 'm', uselib_store = 'M' ):
 		conf.define( 'HAVE_M', 1 )
-	if conf.check_cxx( lib = 'bz2', uselib_store = 'BZIP2' ):
-		conf.define( 'HAVE_BZIP2', 1 )
-	if conf.check_cxx( lib = 'mgl', uselib_store = 'MGL' ):
-		conf.define( 'HAVE_MGL', 1 )
-	if conf.check_cxx( lib = 'cairo', uselib_store = 'CAIRO' ):
-		conf.define( 'HAVE_CAIRO', 1 )
 	if Options.options.static and conf.check_cxx( staticlib = 'pthread', uselib_store = "PTHREAD" ):
 		conf.define( 'HAVE_PTHREAD', 1 )
 	elif conf.check_cxx( lib = 'pthread', uselib_store = "PTHREAD" ):
@@ -158,7 +159,7 @@ def misc_configure( conf ) :
 	conf.define( 'GENFILE_USE_FAST_PARSE_METHODS', 1 )
 	conf.define( 'EIGEN_NO_DEBUG', 1 )
 
-def get_cxx_flags( variant_name ):
+def get_cxxflags( variant_name ):
 	cxxflags = [
 		#'-std=c++11',
 		'-Wall',
@@ -173,7 +174,7 @@ def get_cxx_flags( variant_name ):
 		cxxflags.extend( [ '-O3' ])
 	return cxxflags
 
-def get_ld_flags( variant_name ):
+def get_linkflags( variant_name ):
 	import platform
 	ldflags = []
 	if variant_name == 'default' and platform.system() == 'Darwin':
