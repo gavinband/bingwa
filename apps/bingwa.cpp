@@ -1928,10 +1928,12 @@ public:
 					) ;
 				}
 				if( extra_variables.size() > 0 ) {
+#if DEBUG
 					std::cerr << "Extra variables are:\n" ;
 					for( impl::VariableMap::const_iterator j = extra_variables.begin(); j != extra_variables.end(); ++j ) {
 						std::cerr << "\"" << j->first << "\" -> \"" << j->second << "\".\n" ;
 					}
+#endif
 					storage->add_table(
 						options().get_value( "-table-prefix" ) + "Extra",
 						boost::bind( &impl::contains_variable, extra_variables, _1 )
@@ -3182,7 +3184,7 @@ public:
 			) ;
 		}
 
-#if DEBUG
+#if DEBUG_BINGWA
 		for( std::size_t i = 0; i < parameters->size(); ++i ) {
 			std::cerr << "PARAMETER: \"" + parameters->parameter_name(i) << "\", se = \"" + parameters->se_name(i) << ".\n" ;
 		}
@@ -3205,7 +3207,7 @@ public:
 					elts[1]
 				) ;
 
-#if DEBUG
+#if DEBUG_BINGWA
 				std::cerr << "After replacing \"" << key << "\":\n" ;
 				for( std::size_t i = 0; i < parameters->size(); ++i ) {
 					std::cerr << "PARAMETER: \"" + parameters->parameter_name(i) << "\", se = \"" + parameters->se_name(i) << ".\n" ;

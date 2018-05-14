@@ -36,7 +36,6 @@ namespace bingwa {
 		defaults.push_back( "NULL" ) ;
 		defaults.push_back( "N" ) ;
 		defaults.push_back( "B_allele_frequency" ) ;
-		defaults.push_back( "info" ) ;
 		defaults.push_back( "trusted" ) ;
 		defaults.push_back( "pvalue" ) ;
 		for( std::size_t cohort = 0; cohort < m_variables.size(); ++cohort ) {
@@ -71,7 +70,6 @@ namespace bingwa {
 
 			callback( prefix + "N", "FLOAT" ) ;
 			callback( prefix + "B_allele_frequency", "FLOAT" ) ;
-			callback( prefix + "info", "FLOAT" ) ;
 			
 			BOOST_FOREACH( std::string const& variable, m_variables[cohort] ) {
 				callback( prefix + variable, "NULL" ) ;
@@ -143,13 +141,15 @@ namespace bingwa {
 					total_allele_count += 2.0 * ( counts(2) + counts(3) + counts(4) ) ;
 				}
 				callback( prefix + "B_allele_frequency", B_allele_count / total_allele_count ) ;
-				callback( prefix + "info", info ) ;
-				std::cerr << "Output info = " << info << ".\n" ;
 				{
 					std::string value ;
 					BOOST_FOREACH( std::string const& variable, m_variables[i] ) {
 						data_getter.get_variable( variable, i, &value ) ;
-						callback( prefix + variable, value ) ;
+						try {
+							callback( prefix + variable, genfile::string_utils::to_repr< double >( value ) ) ;
+						} catch( ... ) {
+							callback( prefix + variable, value ) ;
+						}
 					}
 				}
 				

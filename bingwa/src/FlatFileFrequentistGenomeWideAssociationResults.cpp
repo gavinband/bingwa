@@ -122,9 +122,7 @@ std::string FlatFileFrequentistGenomeWideAssociationResults::get_summary( std::s
 
 void FlatFileFrequentistGenomeWideAssociationResults::add_variable( std::string const& variable ) {
 	/* Don't do anything if variable is already added */
-	std::cerr << "Adding variable \"" << variable << ".\n" ;
 	for( std::size_t i = 0; i < m_desired_columns.size(); ++i ) {
-		std::cerr << "Comparing \"" << variable << "\" to \"" << m_desired_columns[i].name() << "\".\n" ;
 		if( variable == m_desired_columns[i].name() ) {
 			return ;
 		}

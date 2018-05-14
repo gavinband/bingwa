@@ -181,6 +181,7 @@ namespace bingwa {
 			m_pvalue_column = matched_pvalue_column.get().name() ;
 		}
 
+#if 0
 		{
 			regex const info_regex( "(all_)?info" ) ;
 			boost::optional< ColumnSpec > matched_info_column = impl::get_matching_name( column_names, info_regex, true, "info" ) ;
@@ -194,7 +195,7 @@ namespace bingwa {
 			result.push_back( matched_info_column.get() ) ;
 			m_info_column = matched_info_column.get().name() ;
 		}
-		
+#endif		
 		impl::insert_matched( column_names, regex( "all_AA" ), "counts", &result ) ;
 		impl::insert_matched( column_names, regex( "all_AB" ), "counts", &result ) ;
 		impl::insert_matched( column_names, regex( "all_BB" ), "counts", &result ) ;
@@ -302,17 +303,12 @@ namespace bingwa {
 		else if( variable == "all_NULL" ) {
 			m_sample_counts( snp_index, 5 ) = ( value == "NA" ? NA: to_repr< double >( value ) ) ;
 		}
-		else if( variable == m_info_column ) {
-			std::cerr << "STORING info value: " << value << ".\n" ;
-			m_info( snp_index ) = ( value == "NA" ? NA: to_repr< double >( value ) ) ;
-		}
 		else if( m_variables.find( variable ) != m_variables.end() ) {
 			m_extra_variable_storage[ variable ][ snp_index ] = value ;
 		}
 	}
 	
 	genfile::VariantEntry SNPTESTResults::get_value( std::size_t snp_index, std::string const& variable ) const {
-		std::cerr << "Getting: \"" << variable << "\"...\n" ;
 		if( variable == m_pvalue_column ) {
 			return m_pvalues( snp_index ) ;
 		}
@@ -333,9 +329,6 @@ namespace bingwa {
 		}
 		else if( variable == "all_NULL" ) {
 			return m_sample_counts( snp_index, 5 ) ;
-		}
-		else if( variable == m_info_column ) {
-			return m_info( snp_index ) ;
 		}
 		else {
 			ExtraVariables::const_iterator where = m_extra_variable_storage.find( variable ) ;
