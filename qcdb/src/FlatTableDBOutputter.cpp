@@ -95,6 +95,10 @@ namespace qcdb {
 		}
 		stmt->step() ;
 	}
+	
+	void FlatTableDBOutputter::set_record_all_identifiers() {
+		m_outputter.set_record_all_identifiers() ;
+	}
 
 	FlatTableDBOutputter::AnalysisId FlatTableDBOutputter::analysis_id() const {
 		return m_outputter.analysis_id() ;

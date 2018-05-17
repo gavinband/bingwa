@@ -222,6 +222,9 @@ struct BingwaOptions: public appcontext::CmdLineOptionProcessor {
 				.set_description( "Specify that " + globals::program_name + " should not create large indices on database tables when finalising storage."
 					" Indices are usually desired.  However, when running very large jobs parallelised across subsets, it is generally faster to"
 					" use -noindex and create indices manually when all jobs have completed." ) ;
+			options[ "-no-identifiers" ]
+				.set_description( "Specify that " + globals::program_name + " should not record all variant identifiers that differ from"
+					" the primary identifer.  This identifiers will appear in a table called \"VariantIdentifier\"." ) ;
 			options[ "-analysis-name" ]
 				.set_description( "Specify a name for the current analysis." )
 				.set_takes_single_value()
@@ -1745,6 +1748,9 @@ public:
 				options().get< std::string >( "-snp-match-fields" ),
 				analysis_id
 			) ;
+			if( !options().check( "-no-identifiers")) {
+				table_storage->set_record_all_identifiers() ;
+			}
 			storage = table_storage ;
 			
 		} else {

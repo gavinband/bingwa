@@ -54,6 +54,8 @@ namespace qcdb {
 			std::string const& snp_match_fields = "position,alleles"
 		) ;
 		~DBOutputter() ;
+		
+		void set_record_all_identifiers() ;
 
 		// Create an entity.  Optionally supply a class (which must be the id of another entity.)
 		db::Connection::RowId get_or_create_entity(
@@ -76,6 +78,7 @@ namespace qcdb {
 		
 	private:
 		db::Connection::UniquePtr m_connection ;
+		long m_flags ;
 		std::string const m_analysis_name ;
 		std::string const m_analysis_chunk ;
 		Metadata const m_metadata ;

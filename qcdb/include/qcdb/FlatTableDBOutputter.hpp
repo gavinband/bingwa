@@ -62,7 +62,7 @@ namespace qcdb {
 			boost::function< std::string ( std::size_t ) > getColumnName,
 			boost::function< genfile::VariantEntry( std::size_t ) > getColumnValue
 		) ;
-		
+		void set_record_all_identifiers() ;
 		void add_variable(
 			std::string const& variable,
 			std::string const& type

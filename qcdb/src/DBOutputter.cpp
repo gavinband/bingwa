@@ -71,6 +71,7 @@ namespace qcdb {
 		std::string const& snp_match_fields
 	):
 		m_connection( db::Connection::create( filename )),
+		m_flags(0),
 		m_analysis_name( analysis_name ),
 		m_analysis_chunk( analysis_description ),
 		m_metadata( metadata ),
@@ -314,6 +315,10 @@ namespace qcdb {
 		}
 	}
 	
+	void DBOutputter::set_record_all_identifiers() {
+		m_flags |= eIncludeAllIdentifiers ;
+	}
+	
 	void DBOutputter::start_analysis( db::Connection::RowId const analysis_id ) const {
 		db::Connection::StatementPtr stmnt = m_connection->get_statement( "INSERT INTO AnalysisStatus( analysis_id, started, status ) VALUES( ?, ?, ? )" ) ;
 		stmnt->bind( 1, analysis_id ) ;
@@ -496,7 +501,9 @@ namespace qcdb {
 		m_find_variant_identifier_statement->reset() ;
 	}
 
-	db::Connection::RowId DBOutputter::get_or_create_variant( genfile::VariantIdentifyingData const& snp ) const {
+	db::Connection::RowId DBOutputter::get_or_create_variant(
+		genfile::VariantIdentifyingData const& snp
+	) const {
 		db::Connection::RowId result ;
 		m_find_variant_statement
 			->bind( 1, std::string( snp.get_position().chromosome() ) )
@@ -532,18 +539,20 @@ namespace qcdb {
 			) ;
 		} else {
 			result = m_find_variant_statement->get< db::Connection::RowId >( 0 ) ;
-			std::string const rsid = m_find_variant_statement->get< std::string >( 1 ) ;
-			add_alternative_variant_identifier( result, snp.get_primary_id(), rsid ) ;
-			snp.get_identifiers(
-				boost::bind(
-					&DBOutputter::add_alternative_variant_identifier,
-					this,
-					result,
-					_1,
-					rsid
-				),
-				1
-			) ;
+			if( m_flags & eIncludeAllIdentifiers ) {
+				std::string const rsid = m_find_variant_statement->get< std::string >( 1 ) ;
+				add_alternative_variant_identifier( result, snp.get_primary_id(), rsid ) ;
+				snp.get_identifiers(
+					boost::bind(
+						&DBOutputter::add_alternative_variant_identifier,
+						this,
+						result,
+						_1,
+						rsid
+					),
+					1
+				) ;
+			}
 		}
 		m_find_variant_statement->reset() ;
 		return result ;

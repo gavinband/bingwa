@@ -8,7 +8,7 @@
 #define QCTOOL_QCDB_STORAGE_OPTIONS_HPP
 
 namespace qcdb {
-	enum StorageOptions { eCreateIndices = 1 } ;
+	enum StorageOptions { eCreateIndices = 1, eIncludeAllIdentifiers = 2 } ;
 }
 
 #endif
