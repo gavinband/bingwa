@@ -86,6 +86,7 @@ namespace bingwa {
 					result->push_back( matched.get() ) ;
 				}
 			} else {
+				std::cerr << "NAME: " << names[0] << "\n" ;
 				throw genfile::BadArgumentError(
 					"impl::insert_matched()",
 					"names",

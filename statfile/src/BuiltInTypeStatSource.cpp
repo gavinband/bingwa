@@ -26,8 +26,14 @@ namespace statfile {
 			source.reset( new statfile::DelimitedStatSource( filename, " " )) ;
 		}
 		else {
-			// default to space-delimited format
+			// try a space-delimited format, or if not, a tab-separated
 			source.reset( new statfile::DelimitedStatSource( filename, " " )) ;
+			if( source->number_of_columns() == 1 ) {
+				source.reset( new statfile::DelimitedStatSource( filename, "\t" )) ;
+			}
+			if( source->number_of_columns() == 1 ) {
+				source.reset( new statfile::DelimitedStatSource( filename, "," )) ;
+			}
 		}
 
 		return source ;
